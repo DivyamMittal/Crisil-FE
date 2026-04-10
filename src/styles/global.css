@@ -48,7 +48,11 @@ select {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 28%),
+    radial-gradient(
+      circle at top left,
+      rgba(255, 255, 255, 0.9),
+      transparent 28%
+    ),
     linear-gradient(180deg, #eff3f8 0%, #e8edf5 100%);
 }
 
@@ -877,6 +881,21 @@ select {
   color: #171717;
 }
 
+.task-date-time-cell {
+  display: inline-grid;
+  /* gap: 2px; */
+}
+
+.span:first-child {
+  white-space: nowrap;
+}
+
+.span:last-child {
+  color: #666;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
 .task-drawer__progress-card,
 .task-drawer__timer-card {
   border-top: 1px solid #ececec;
@@ -947,15 +966,27 @@ select {
   margin-bottom: 8px;
 }
 
+.task-drawer__comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .task-drawer__comment-header strong {
   font-size: 0.92rem;
 }
 
 .task-drawer__comment-header strong span,
-.task-drawer__comment-header > span {
+.task-drawer__comment-meta span {
   color: #7a7a7a;
   font-weight: 500;
   font-size: 0.76rem;
+}
+
+.task-drawer__comment-edited {
+  text-transform: lowercase;
 }
 
 .task-drawer__comment-input {
@@ -967,9 +998,29 @@ select {
   min-height: 90px;
 }
 
+.task-drawer__comment-input--inline {
+  min-height: 72px;
+}
+
 .task-drawer__comment-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.task-drawer__comment-actions--inline {
+  justify-content: flex-start;
+}
+
+.task-drawer__comment-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #555;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .task-drawer__approvals > span {

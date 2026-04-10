@@ -7,6 +7,8 @@ import {
   TaskStatus,
   TimerState,
   UserRole,
+  toLocalDate,
+  toLocalDateAndTimeParts,
   type ApprovalRequest,
   type Activity,
   type Comment,
@@ -71,18 +73,6 @@ const formatDuration = (seconds: number) => {
   return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, "0")).join(":");
 };
 
-const formatDate = (value?: string | null) => {
-  if (!value) {
-    return "N/A";
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-};
-
 const formatDateTime = (value?: string | null) => {
   if (!value) {
     return "";
@@ -107,6 +97,8 @@ export const TaskDetailDrawer = ({
   const [detail, setDetail] = useState<TaskDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [commentBody, setCommentBody] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentBody, setEditingCommentBody] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -135,6 +127,13 @@ export const TaskDetailDrawer = ({
 
     void load();
   }, [isOpen, taskId]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setEditingCommentId(null);
+      setEditingCommentBody("");
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!detail?.task.dueDateUtc) {
@@ -211,6 +210,10 @@ export const TaskDetailDrawer = ({
 
   const task = detail?.task ?? null;
   const approvals = detail?.approvals ?? [];
+  const taskTimeZone =
+    user?.userRole === UserRole.MANAGER ? detail?.assignee?.timezone : user?.timezone;
+  const startedAt = toLocalDateAndTimeParts(detail?.task.startedAtUtc, taskTimeZone);
+  const completedAt = toLocalDateAndTimeParts(detail?.task.completedAtUtc, taskTimeZone);
   const estimatedSeconds = (task?.estimatedHours ?? 0) * 3600;
   const completionPercent =
     estimatedSeconds > 0 ? Math.min(100, Math.round((loggedSeconds / estimatedSeconds) * 100)) : 0;
@@ -334,7 +337,40 @@ export const TaskDetailDrawer = ({
         method: "POST",
         suppressGlobalLoader: true,
       });
-      await handleTaskRefresh("Completion request submitted");
+      await handleTaskRefresh("Task marked as completed");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleCommentEditStart = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentBody(comment.body);
+  };
+
+  const handleCommentEditCancel = () => {
+    setEditingCommentId(null);
+    setEditingCommentBody("");
+  };
+
+  const handleCommentEditSave = async () => {
+    if (!editingCommentId || !editingCommentBody.trim()) {
+      return;
+    }
+
+    setLoadingAction(`comment-edit-${editingCommentId}`);
+    try {
+      await api(`/comments/${editingCommentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          body: editingCommentBody.trim(),
+        }),
+        suppressGlobalLoader: true,
+      });
+
+      setEditingCommentId(null);
+      setEditingCommentBody("");
+      await handleTaskRefresh("Comment updated");
     } finally {
       setLoadingAction(null);
     }
@@ -385,7 +421,7 @@ export const TaskDetailDrawer = ({
                 </div>
                 <div>
                   <span>Due Date</span>
-                  <strong>{formatDate(detail.task.dueDateUtc)}</strong>
+                  <strong>{toLocalDate(detail.task.dueDateUtc, taskTimeZone)}</strong>
                 </div>
                 <div>
                   <span>Status</span>
@@ -393,7 +429,21 @@ export const TaskDetailDrawer = ({
                 </div>
                 <div>
                   <span>Created On</span>
-                  <strong>{formatDate(detail.task.createdAt)}</strong>
+                  <strong>{toLocalDate(detail.task.createdAt, taskTimeZone)}</strong>
+                </div>
+                <div>
+                  <span>Start Time</span>
+                  <strong className="task-date-time-cell">
+                    <span>{startedAt.date}</span>
+                    <span>{startedAt.time}</span>
+                  </strong>
+                </div>
+                <div>
+                  <span>End Time</span>
+                  <strong className="task-date-time-cell">
+                    <span>{completedAt.date}</span>
+                    <span>{completedAt.time}</span>
+                  </strong>
                 </div>
               </section>
 
@@ -458,6 +508,9 @@ export const TaskDetailDrawer = ({
                   {detail.comments.map((comment) => {
                     const author = authorMap.get(comment.authorId);
                     const isCurrentUser = author?.id === user?.id;
+                    const isEditing = editingCommentId === comment.id;
+                    const isEdited =
+                      new Date(comment.updatedAt).getTime() - new Date(comment.createdAt).getTime() > 1000;
 
                     return (
                       <article key={comment.id} className="task-drawer__comment">
@@ -468,9 +521,53 @@ export const TaskDetailDrawer = ({
                               ({isCurrentUser ? "You" : author?.userRole === UserRole.MANAGER ? "Manager" : "User"})
                             </span>
                           </strong>
-                          <span>{formatDateTime(comment.createdAt)}</span>
+                          <div className="task-drawer__comment-meta">
+                            <span>{formatDateTime(comment.createdAt)}</span>
+                            {isEdited ? <span className="task-drawer__comment-edited">edited</span> : null}
+                          </div>
                         </div>
-                        <p>{comment.body}</p>
+                        {isEditing ? (
+                          <>
+                            <textarea
+                              className="task-drawer__comment-input task-drawer__comment-input--inline"
+                              rows={3}
+                              value={editingCommentBody}
+                              onChange={(event) => setEditingCommentBody(event.target.value)}
+                            />
+                            <div className="task-drawer__comment-actions task-drawer__comment-actions--inline">
+                              <button
+                                className="timesheet-secondary-button"
+                                onClick={handleCommentEditCancel}
+                                type="button"
+                              >
+                                Cancel
+                              </button>
+                              <LoadingButton
+                                className="timesheet-primary-button"
+                                loading={loadingAction === `comment-edit-${comment.id}`}
+                                onClick={() => void handleCommentEditSave()}
+                                type="button"
+                              >
+                                Save
+                              </LoadingButton>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p>{comment.body}</p>
+                            {isCurrentUser ? (
+                              <div className="task-drawer__comment-actions task-drawer__comment-actions--inline">
+                                <button
+                                  className="task-drawer__comment-link"
+                                  onClick={() => handleCommentEditStart(comment)}
+                                  type="button"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
                       </article>
                     );
                   })}
@@ -612,7 +709,7 @@ export const TaskDetailDrawer = ({
             <div className="task-modal__success-icon">◔</div>
             <h3 className="task-modal__success-title">Approval Request Sent</h3>
             <p className="task-modal__success-copy">
-              Your request to change the due date to {formatDate(requestedDueDate)} has been sent to{" "}
+              Your request to change the due date to {toLocalDate(requestedDueDate, taskTimeZone)} has been sent to{" "}
               {detail?.createdBy?.fullName ?? "your manager"} for approval. The date will update once approved.
             </p>
             <button

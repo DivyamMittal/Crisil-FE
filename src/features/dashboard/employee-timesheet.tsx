@@ -74,7 +74,7 @@ export const EmployeeTimesheetPage = () => {
       api<EmployeeDashboardResponse>("/analytics/dashboard"),
       api<Project[]>("/projects"),
       api<Activity[]>("/activities"),
-      api<Task[]>("/tasks"),
+      api<Task[]>("/tasks?excludeCompleted=true"),
       api<TimeEntry[]>("/time-tracking/entries"),
     ]);
     const runningEntryData =
@@ -186,6 +186,13 @@ export const EmployeeTimesheetPage = () => {
     currentActionTask?.status !== TaskStatus.APPROVAL_PENDING &&
     currentActionTask?.status !== TaskStatus.COMPLETED;
 
+  const canSwitchTaskFromCard =
+    Boolean(currentActionTask) &&
+    Boolean(runningTask) &&
+    runningTask?.id !== currentActionTask?.id &&
+    currentActionTask?.status !== TaskStatus.APPROVAL_PENDING &&
+    currentActionTask?.status !== TaskStatus.COMPLETED;
+
   const startableTasks = useMemo(
     () =>
       tasks.filter(
@@ -242,7 +249,7 @@ export const EmployeeTimesheetPage = () => {
 
   useEffect(() => {
     if (!selectedTaskId && tasks.length > 0) {
-      setSelectedTaskId(tasks[0].id);
+      setSelectedTaskId(tasks[0]?.id ?? "");
     }
   }, [selectedTaskId, tasks]);
 
@@ -377,6 +384,37 @@ export const EmployeeTimesheetPage = () => {
                     Stop
                   </LoadingButton>
                 </div>
+              ) : canSwitchTaskFromCard ? (
+                <LoadingButton
+                  className="timesheet-primary-button"
+                  loading={loadingAction === "switch-task"}
+                  onClick={async () => {
+                    setLoadingAction("switch-task");
+                    setSelectedTaskId(currentActionTask.id);
+                    try {
+                      await api(`/tasks/${runningTask!.id}/timer-transition`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          timerState: TimerState.STOPPED,
+                        }),
+                        suppressGlobalLoader: true,
+                      });
+                      await api(`/tasks/${currentActionTask.id}/start-timer`, {
+                        method: "POST",
+                        suppressGlobalLoader: true,
+                      });
+                      showSuccessToast("Switched active task");
+                      await load();
+                    } finally {
+                      setLoadingAction(null);
+                    }
+                  }}
+                  type="button"
+                >
+                  {currentActionTask.status === TaskStatus.ON_HOLD
+                    ? "Switch & Resume"
+                    : "Switch & Start"}
+                </LoadingButton>
               ) : canStartFromCard ? (
                 <LoadingButton
                   className="timesheet-primary-button"
@@ -413,7 +451,7 @@ export const EmployeeTimesheetPage = () => {
                         method: "POST",
                         suppressGlobalLoader: true,
                       });
-                      showSuccessToast("Completion request submitted");
+                      showSuccessToast("Task marked as completed");
                       await load();
                     } finally {
                       setLoadingAction(null);
@@ -567,7 +605,11 @@ export const EmployeeTimesheetPage = () => {
                   <tr
                     key={task.id}
                     className={`timesheet-table-row ${selectedTaskId === task.id ? "timesheet-table-row--selected" : ""}`}
-                    onClick={() => setSelectedTaskId(task.id)}
+                    onClick={() => {
+                      if (task.status !== TaskStatus.COMPLETED) {
+                        setSelectedTaskId(task.id);
+                      }
+                    }}
                   >
                     <td className="timesheet-strong-cell">
                       {getProjectName(task.projectId)}

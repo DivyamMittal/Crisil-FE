@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Priority, ProjectStatus, TaskStatus, type Task, type User } from "@/shared";
+import { Priority, ProjectStatus, TaskStatus, toLocalDate, toLocalDateAndTimeParts, type Task, type User } from "@/shared";
 import { LoadingButton } from "@/components/loading-button";
 import { Card, SectionTitle } from "@/ui";
 import { api } from "@/lib/api";
@@ -265,21 +265,41 @@ export const ManagerProjectsPage = () => {
                 <th>Assigned To</th>
                 <th>Status</th>
                 <th>Due Date</th>
+                <th>Start Time</th>
+                <th>End Time</th>
                 <th>Hours</th>
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => (
-                <tr key={task.id} onClick={() => setDrawerTaskId(task.id)}>
-                  <td className="manager-dashboard-table__strong">{task.title}</td>
-                  <td>{projects.find((project) => project.id === task.projectId)?.name ?? task.projectId}</td>
-                  <td>{activities.find((activity) => activity.id === task.activityId)?.name ?? task.activityId}</td>
-                  <td>{employees.find((employee) => employee.id === task.assigneeId)?.fullName ?? task.assigneeId}</td>
-                  <td>{taskStatusLabelMap[task.status]}</td>
-                  <td>{new Date(task.dueDateUtc).toLocaleDateString("en-GB")}</td>
-                  <td>{`${task.loggedMinutes}m / ${task.estimatedHours}h`}</td>
-                </tr>
-              ))}
+              {tasks.map((task) => {
+                const assignee = employees.find((employee) => employee.id === task.assigneeId);
+                const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, assignee?.timezone);
+                const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, assignee?.timezone);
+
+                return (
+                  <tr key={task.id} onClick={() => setDrawerTaskId(task.id)}>
+                    <td className="manager-dashboard-table__strong">{task.title}</td>
+                    <td>{projects.find((project) => project.id === task.projectId)?.name ?? task.projectId}</td>
+                    <td>{activities.find((activity) => activity.id === task.activityId)?.name ?? task.activityId}</td>
+                    <td>{assignee?.fullName ?? task.assigneeId}</td>
+                    <td>{taskStatusLabelMap[task.status]}</td>
+                    <td>{toLocalDate(task.dueDateUtc, assignee?.timezone)}</td>
+                    <td>
+                      <div className="task-date-time-cell">
+                        <span>{startedAt.date}</span>
+                        <span>{startedAt.time}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="task-date-time-cell">
+                        <span>{completedAt.date}</span>
+                        <span>{completedAt.time}</span>
+                      </div>
+                    </td>
+                    <td>{`${task.loggedMinutes}m / ${task.estimatedHours}h`}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
