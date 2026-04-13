@@ -214,6 +214,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .timesheet-section-header h2,
@@ -224,9 +225,28 @@ select {
   font-weight: 800;
 }
 
+.timesheet-header-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.timesheet-header-copy p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.timesheet-header-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .timesheet-action-row {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .timesheet-task-select {
@@ -1274,10 +1294,20 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.manager-period-switcher {
+  display: inline-flex;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .manager-week-switcher button,
-.manager-dashboard-section__header select {
+.manager-dashboard-section__header select,
+.manager-period-switcher button {
   height: 40px;
   border: 1px solid #d7d7d7;
   background: #fff;
@@ -1289,6 +1319,20 @@ select {
 .manager-week-switcher button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.manager-period-switcher button {
+  border: 0;
+  border-right: 1px solid #d7d7d7;
+}
+
+.manager-period-switcher button:last-child {
+  border-right: 0;
+}
+
+.manager-period-switcher button.is-active {
+  background: #111;
+  color: #fff;
 }
 
 .manager-week-switcher strong {

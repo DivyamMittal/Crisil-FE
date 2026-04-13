@@ -7,7 +7,10 @@ import { api } from "@/lib/api";
 import { showSuccessToast } from "@/lib/toast";
 
 type ManagerDashboardResponse = {
-  week: {
+  period: {
+    type: "today" | "week" | "month";
+    label: string;
+    offset: number;
     start: string;
     end: string;
   };
@@ -57,18 +60,6 @@ const approvalTypeLabelMap: Record<ApprovalType, string> = {
   [ApprovalType.TASK_UPDATE]: "Task Update",
 };
 
-const formatWeekLabel = (start: string, end: string) => {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
-  const dayFormatter = new Intl.DateTimeFormat("en-US", { day: "2-digit" });
-  const yearFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric" });
-
-  return `${monthFormatter.format(startDate).toUpperCase()} ${dayFormatter.format(startDate)} - ${monthFormatter
-    .format(endDate)
-    .toUpperCase()} ${dayFormatter.format(endDate)}, ${yearFormatter.format(endDate)}`;
-};
-
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -86,18 +77,19 @@ const getInitials = (fullName: string) =>
 
 export const ManagerDashboardPage = () => {
   const navigate = useNavigate();
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [period, setPeriod] = useState<"today" | "week" | "month">("week");
+  const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState("");
   const [data, setData] = useState<ManagerDashboardResponse | null>(null);
   const [loadingApprovalId, setLoadingApprovalId] = useState<string | null>(null);
 
-  const load = async (offset: number) => {
-    setData(await api<ManagerDashboardResponse>(`/analytics/dashboard?weekOffset=${offset}`));
+  const load = async (nextPeriod: "today" | "week" | "month", nextOffset: number) => {
+    setData(await api<ManagerDashboardResponse>(`/analytics/dashboard?period=${nextPeriod}&offset=${nextOffset}`));
   };
 
   useEffect(() => {
-    void load(weekOffset);
-  }, [weekOffset]);
+    void load(period, offset);
+  }, [period, offset]);
 
   const reviewApproval = async (approvalId: string, status: ApprovalStatus) => {
     setLoadingApprovalId(approvalId);
@@ -112,7 +104,7 @@ export const ManagerDashboardPage = () => {
       });
 
       showSuccessToast(`Approval ${status.toLowerCase()}`);
-      await load(weekOffset);
+      await load(period, offset);
     } finally {
       setLoadingApprovalId(null);
     }
@@ -134,14 +126,27 @@ export const ManagerDashboardPage = () => {
     <div className="manager-dashboard-page">
       <div className="manager-dashboard-topbar">
         <div className="manager-week-switcher">
-          <button onClick={() => setWeekOffset((current) => current - 1)} type="button">
-            ‹ Prev Week
+          <div className="manager-period-switcher">
+            {(["today", "week", "month"] as const).map((option) => (
+              <button
+                key={option}
+                className={option === period ? "is-active" : ""}
+                onClick={() => {
+                  setPeriod(option);
+                  setOffset(0);
+                }}
+                type="button"
+              >
+                {option === "today" ? "Today" : option === "week" ? "Weekly" : "Monthly"}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setOffset((current) => current - 1)} type="button">
+            ‹ Prev
           </button>
-          <strong>
-            {data ? formatWeekLabel(data.week.start, data.week.end) : "Loading week range..."}
-          </strong>
-          <button disabled={weekOffset === 0} onClick={() => setWeekOffset((current) => Math.min(0, current + 1))} type="button">
-            Next Week ›
+          <strong>{data?.period.label ?? "Loading range..."}</strong>
+          <button disabled={offset === 0} onClick={() => setOffset((current) => Math.min(0, current + 1))} type="button">
+            Next ›
           </button>
         </div>
         <div className="manager-dashboard-quick-actions">
@@ -155,7 +160,7 @@ export const ManagerDashboardPage = () => {
       </div>
 
       <section className="manager-dashboard-actions">
-        <h2>Quick Actions</h2>
+        <h2>Team KPIs</h2>
         <div className="manager-dashboard-stats">
           {(data?.headlineStats ?? []).map((stat) => (
             <article key={stat.label} className="manager-dashboard-stat">
@@ -188,7 +193,7 @@ export const ManagerDashboardPage = () => {
                 <th>Activity</th>
                 <th>Task</th>
                 <th>Status</th>
-                <th>Time Today</th>
+                <th>Time Logged</th>
               </tr>
             </thead>
             <tbody>
@@ -213,6 +218,13 @@ export const ManagerDashboardPage = () => {
                   <td>{item.timeLogged}</td>
                 </tr>
               ))}
+              {filteredActivity.length === 0 ? (
+                <tr>
+                  <td className="employee-task-table__empty" colSpan={6}>
+                    No team activity found for the selected period.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -272,7 +284,7 @@ export const ManagerDashboardPage = () => {
               {(data?.pendingApprovals.length ?? 0) === 0 ? (
                 <tr>
                   <td className="employee-task-table__empty" colSpan={6}>
-                    No pending approvals for the selected week.
+                    No pending approvals for the selected period.
                   </td>
                 </tr>
               ) : null}

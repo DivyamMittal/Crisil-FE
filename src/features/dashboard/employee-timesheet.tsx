@@ -13,6 +13,13 @@ import { api } from "@/lib/api";
 import { showSuccessToast } from "@/lib/toast";
 
 type EmployeeDashboardResponse = {
+  period: {
+    type: "today" | "week" | "month";
+    label: string;
+    offset: number;
+    start: string;
+    end: string;
+  };
   utilizationCards: Array<{ label: string; value: string; helper: string }>;
 };
 
@@ -43,7 +50,22 @@ const statusLabelMap: Record<TaskStatus, string> = {
   [TaskStatus.COMPLETED]: "Completed",
 };
 
+const isDateInRange = (
+  value: string | null | undefined,
+  start: number,
+  end: number,
+) => {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value).getTime();
+  return date >= start && date <= end;
+};
+
 export const EmployeeTimesheetPage = () => {
+  const [period, setPeriod] = useState<"today" | "week" | "month">("week");
+  const [offset, setOffset] = useState(0);
   const [dashboard, setDashboard] = useState<EmployeeDashboardResponse | null>(
     null,
   );
@@ -63,7 +85,7 @@ export const EmployeeTimesheetPage = () => {
     reason: "",
   });
 
-  const load = async () => {
+  const load = async (nextPeriod = period, nextOffset = offset) => {
     const [
       dashboardData,
       projectsData,
@@ -71,7 +93,9 @@ export const EmployeeTimesheetPage = () => {
       tasksData,
       entriesData,
     ] = await Promise.all([
-      api<EmployeeDashboardResponse>("/analytics/dashboard"),
+      api<EmployeeDashboardResponse>(
+        `/analytics/dashboard?period=${nextPeriod}&offset=${nextOffset}`,
+      ),
       api<Project[]>("/projects"),
       api<Activity[]>("/activities"),
       api<Task[]>("/tasks?excludeCompleted=true"),
@@ -109,8 +133,8 @@ export const EmployeeTimesheetPage = () => {
   };
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(period, offset);
+  }, [period, offset]);
 
   const runningEntry = useMemo(
     () =>
@@ -133,6 +157,34 @@ export const EmployeeTimesheetPage = () => {
   const selectedTaskEntries = useMemo(
     () => entries.filter((entry) => entry.taskId === currentActionTask?.id),
     [currentActionTask?.id, entries],
+  );
+
+  const periodEntries = useMemo(() => {
+    if (!dashboard?.period) {
+      return entries;
+    }
+
+    const start = new Date(dashboard.period.start).getTime();
+    const end = new Date(dashboard.period.end).getTime();
+
+    return entries.filter((entry) => {
+      const entryStart = new Date(entry.startTimeUtc).getTime();
+      return entryStart >= start && entryStart <= end;
+    });
+  }, [dashboard?.period, entries]);
+
+  const periodTasks = useMemo(
+    () =>
+      tasks.filter((task) =>
+        periodEntries.some((entry) => entry.taskId === task.id) ||
+        runningEntry?.taskId === task.id ||
+        isDateInRange(task.createdAt, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
+        isDateInRange(task.updatedAt, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
+        isDateInRange(task.startedAtUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
+        isDateInRange(task.completedAtUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
+        isDateInRange(task.dueDateUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()),
+      ),
+    [dashboard?.period.end, dashboard?.period.start, periodEntries, runningEntry?.taskId, tasks],
   );
 
   const selectedTaskRunningEntry = useMemo(
@@ -256,8 +308,42 @@ export const EmployeeTimesheetPage = () => {
   return (
     <div className="timesheet-page">
       <div className="timesheet-section-header">
-        <h2>Work Log Summary</h2>
-        <div className="timesheet-action-row">
+        <div className="timesheet-header-copy">
+          <h2>Work Log Summary</h2>
+          <p>{dashboard?.period.label ?? "Loading range..."}</p>
+        </div>
+        <div className="timesheet-header-controls">
+          <div className="manager-period-switcher">
+            {(["today", "week", "month"] as const).map((option) => (
+              <button
+                key={option}
+                className={option === period ? "is-active" : ""}
+                onClick={() => {
+                  setPeriod(option);
+                  setOffset(0);
+                }}
+                type="button"
+              >
+                {option === "today" ? "Today" : option === "week" ? "Weekly" : "Monthly"}
+              </button>
+            ))}
+          </div>
+          <div className="manager-week-switcher">
+            <button onClick={() => setOffset((current) => current - 1)} type="button">
+              ‹ Prev
+            </button>
+            <strong>{dashboard?.period.label ?? "Loading range..."}</strong>
+            <button
+              disabled={offset === 0}
+              onClick={() => setOffset((current) => Math.min(0, current + 1))}
+              type="button"
+            >
+              Next ›
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="timesheet-action-row">
           <select
             className="timesheet-task-select"
             value={selectedTaskId}
@@ -301,7 +387,6 @@ export const EmployeeTimesheetPage = () => {
           >
             + Log Manually
           </button>
-        </div>
       </div>
 
       {currentActionTask ? (
@@ -569,13 +654,12 @@ export const EmployeeTimesheetPage = () => {
 
       <section className="timesheet-entries-section">
         <h3>
-          Today's Entries —{" "}
-          {new Intl.DateTimeFormat("en-GB", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-          }).format(new Date())}
+          {period === "today"
+            ? "Today's Entries"
+            : period === "week"
+              ? "Weekly Entries"
+              : "Monthly Entries"}{" "}
+          — {dashboard?.period.label ?? ""}
         </h3>
         <div style={{ paddingTop: "10px" }}></div>
         <div className="timesheet-table-card">
@@ -592,8 +676,8 @@ export const EmployeeTimesheetPage = () => {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => {
-                const taskEntries = entries.filter(
+              {periodTasks.map((task) => {
+                const taskEntries = periodEntries.filter(
                   (entry) => entry.taskId === task.id,
                 );
                 const totalSeconds = taskEntries.reduce(
@@ -641,6 +725,13 @@ export const EmployeeTimesheetPage = () => {
                   </tr>
                 );
               })}
+              {periodTasks.length === 0 ? (
+                <tr>
+                  <td className="employee-task-table__empty" colSpan={7}>
+                    No entries found for the selected period.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

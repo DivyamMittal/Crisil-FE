@@ -44,6 +44,7 @@ export const ManagerLayout = () => {
       subtitle="Manager Portal"
       navigation={[
         { to: "/manager/dashboard", label: "Dashboard" },
+        { to: "/manager/tasks", label: "Tasks" },
         { to: "/manager/projects", label: "Projects" },
         { to: "/manager/team", label: "Team" },
         { to: "/manager/approvals", label: "Approvals" },

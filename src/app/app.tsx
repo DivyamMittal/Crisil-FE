@@ -14,6 +14,7 @@ import { EmployeeTimesheetPage } from "../features/dashboard/employee-timesheet"
 import { ManagerDashboardPage } from "../features/manager/manager-dashboard";
 import { ManagerApprovalsPage } from "../features/manager/manager-approvals-page";
 import { ManagerProjectsPage } from "../features/manager/manager-projects-page";
+import { ManagerTasksPage } from "../features/manager/manager-tasks-page";
 import { ManagerTeamPage } from "../features/manager/manager-team-page";
 import { ForbiddenPage, NotFoundPage } from "../features/system/status-pages";
 import { EmployeeTasksPage } from "../features/tasks/employee-tasks";
@@ -55,6 +56,7 @@ export const App = () => {
           <Route element={<RoleGuard role={role} allowed={[UserRole.MANAGER]} />}>
             <Route path="/manager" element={<ManagerLayout />}>
               <Route path="dashboard" element={<ManagerDashboardPage />} />
+              <Route path="tasks" element={<ManagerTasksPage />} />
               <Route path="projects" element={<ManagerProjectsPage />} />
               <Route path="team" element={<ManagerTeamPage />} />
               <Route path="approvals" element={<ManagerApprovalsPage />} />
