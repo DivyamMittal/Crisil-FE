@@ -313,7 +313,7 @@ export const EmployeeTasksPage = () => {
             <span className="employee-tasks-search__icon">⌕</span>
             <input
               type="search"
-              placeholder="Search Tasks"
+              placeholder="Search task, project, activity"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
             />
