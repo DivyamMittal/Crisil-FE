@@ -54,11 +54,18 @@ export interface Task extends BaseEntity {
   title: string;
   description: string;
   assigneeId: EntityId;
+  assigneeIds: EntityId[];
+  assignedTeamIds?: EntityId[];
+  assignedTeams?: Team[];
   createdByManagerId: EntityId;
   priority: Priority;
   status: TaskStatus;
   estimatedHours: number;
   loggedMinutes: number;
+  hasCountTracking: boolean;
+  countNumber?: number | null;
+  benchmarkMinutesPerCount?: number | null;
+  totalCountCompleted: number;
   dueDateUtc: string;
   startedAtUtc?: string | null;
   completedAtUtc?: string | null;
@@ -78,6 +85,7 @@ export interface TimeEntry extends BaseEntity {
   endTimeUtc?: string | null;
   durationSeconds: number;
   durationMinutes: number;
+  countCompleted?: number | null;
   description: string;
   isSubmittedForApproval: boolean;
   approvalRequestId?: EntityId | null;
@@ -109,6 +117,15 @@ export interface Holiday extends BaseEntity {
   dateUtc: string;
   createdByManagerId: EntityId;
   appliesTo?: EntityId[];
+}
+
+export interface Team extends BaseEntity {
+  name: string;
+  createdByAdminId: EntityId;
+  managerIds: EntityId[];
+  memberIds: EntityId[];
+  managers?: User[];
+  members?: User[];
 }
 
 export interface DashboardStat {

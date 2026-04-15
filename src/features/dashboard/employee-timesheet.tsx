@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
   TaskStatus,
   TimerState,
+  toLocalDateAndTimeParts,
   type Activity,
   type Project,
   type Task,
+  type Team,
   type TimeEntry,
+  type User,
 } from "@/shared";
 import { LoadingButton } from "@/components/loading-button";
+import { TaskDetailDrawer } from "@/components/task-detail-drawer";
 import { api } from "@/lib/api";
-import { showSuccessToast } from "@/lib/toast";
+import { showErrorToast, showSuccessToast } from "@/lib/toast";
 
 type EmployeeDashboardResponse = {
   period: {
@@ -21,6 +25,17 @@ type EmployeeDashboardResponse = {
     end: string;
   };
   utilizationCards: Array<{ label: string; value: string; helper: string }>;
+};
+
+type TaskDetailResponse = {
+  task: Task;
+  entries: TimeEntry[];
+  project: Project | null;
+  activity: Activity | null;
+  assignee: User | null;
+  assignees: User[];
+  assignedTeams: Team[];
+  createdBy: User | null;
 };
 
 const formatDuration = (seconds: number) => {
@@ -77,6 +92,18 @@ export const EmployeeTimesheetPage = () => {
   const [showManualLogForm, setShowManualLogForm] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [pendingTimerAction, setPendingTimerAction] = useState<
+    "pause" | "stop" | null
+  >(null);
+  const [countInput, setCountInput] = useState("");
+  const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [expandedTaskDetails, setExpandedTaskDetails] = useState<
+    Record<string, TaskDetailResponse>
+  >({});
+  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<
+    string | null
+  >(null);
   const [manualLog, setManualLog] = useState({
     taskId: "",
     startTimeUtc: "",
@@ -153,6 +180,11 @@ export const EmployeeTimesheetPage = () => {
   );
 
   const currentActionTask = selectedTask ?? runningTask ?? null;
+  const remainingCount = Math.max(
+    0,
+    (currentActionTask?.countNumber ?? 0) -
+      (currentActionTask?.totalCountCompleted ?? 0),
+  );
 
   const selectedTaskEntries = useMemo(
     () => entries.filter((entry) => entry.taskId === currentActionTask?.id),
@@ -175,16 +207,43 @@ export const EmployeeTimesheetPage = () => {
 
   const periodTasks = useMemo(
     () =>
-      tasks.filter((task) =>
-        periodEntries.some((entry) => entry.taskId === task.id) ||
-        runningEntry?.taskId === task.id ||
-        isDateInRange(task.createdAt, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
-        isDateInRange(task.updatedAt, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
-        isDateInRange(task.startedAtUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
-        isDateInRange(task.completedAtUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()) ||
-        isDateInRange(task.dueDateUtc, new Date(dashboard?.period.start ?? 0).getTime(), new Date(dashboard?.period.end ?? 0).getTime()),
+      tasks.filter(
+        (task) =>
+          periodEntries.some((entry) => entry.taskId === task.id) ||
+          runningEntry?.taskId === task.id ||
+          isDateInRange(
+            task.createdAt,
+            new Date(dashboard?.period.start ?? 0).getTime(),
+            new Date(dashboard?.period.end ?? 0).getTime(),
+          ) ||
+          isDateInRange(
+            task.updatedAt,
+            new Date(dashboard?.period.start ?? 0).getTime(),
+            new Date(dashboard?.period.end ?? 0).getTime(),
+          ) ||
+          isDateInRange(
+            task.startedAtUtc,
+            new Date(dashboard?.period.start ?? 0).getTime(),
+            new Date(dashboard?.period.end ?? 0).getTime(),
+          ) ||
+          isDateInRange(
+            task.completedAtUtc,
+            new Date(dashboard?.period.start ?? 0).getTime(),
+            new Date(dashboard?.period.end ?? 0).getTime(),
+          ) ||
+          isDateInRange(
+            task.dueDateUtc,
+            new Date(dashboard?.period.start ?? 0).getTime(),
+            new Date(dashboard?.period.end ?? 0).getTime(),
+          ),
       ),
-    [dashboard?.period.end, dashboard?.period.start, periodEntries, runningEntry?.taskId, tasks],
+    [
+      dashboard?.period.end,
+      dashboard?.period.start,
+      periodEntries,
+      runningEntry?.taskId,
+      tasks,
+    ],
   );
 
   const selectedTaskRunningEntry = useMemo(
@@ -250,6 +309,7 @@ export const EmployeeTimesheetPage = () => {
       tasks.filter(
         (task) =>
           task.status === TaskStatus.PENDING ||
+          task.status === TaskStatus.WIP ||
           task.status === TaskStatus.ON_HOLD ||
           task.status === TaskStatus.REJECTED,
       ),
@@ -262,6 +322,67 @@ export const EmployeeTimesheetPage = () => {
   const getActivityName = (activityId: string) =>
     activities.find((activity) => activity.id === activityId)?.name ??
     activityId;
+
+  const toggleExpandedTask = async (taskId: string) => {
+    if (expandedTaskId === taskId) {
+      setExpandedTaskId(null);
+      return;
+    }
+
+    setExpandedTaskId(taskId);
+
+    if (expandedTaskDetails[taskId]) {
+      return;
+    }
+
+    setExpandedLoadingTaskId(taskId);
+    try {
+      const detail = await api<TaskDetailResponse>(`/tasks/${taskId}`);
+      setExpandedTaskDetails((current) => ({ ...current, [taskId]: detail }));
+    } finally {
+      setExpandedLoadingTaskId(null);
+    }
+  };
+
+  const getAssigneeStatus = (task: Task, assigneeEntries: TimeEntry[]) => {
+    if (
+      assigneeEntries.some((entry) => entry.timerState === TimerState.RUNNING)
+    ) {
+      return { label: "WIP", className: statusClassMap[TaskStatus.WIP] };
+    }
+
+    if (assigneeEntries.length === 0) {
+      return {
+        label: "Not Started",
+        className: statusClassMap[TaskStatus.PENDING],
+      };
+    }
+
+    const latestEntry = [...assigneeEntries].sort(
+      (left, right) =>
+        new Date(right.endTimeUtc ?? right.startTimeUtc).getTime() -
+        new Date(left.endTimeUtc ?? left.startTimeUtc).getTime(),
+    )[0];
+
+    if (task.status === TaskStatus.COMPLETED) {
+      return {
+        label: "Completed",
+        className: statusClassMap[TaskStatus.COMPLETED],
+      };
+    }
+
+    if (latestEntry?.timerState === TimerState.PAUSED) {
+      return {
+        label: "On Hold",
+        className: statusClassMap[TaskStatus.ON_HOLD],
+      };
+    }
+
+    return {
+      label: "Stopped",
+      className: statusClassMap[TaskStatus.APPROVAL_PENDING],
+    };
+  };
 
   useEffect(() => {
     if (!currentActionTask) {
@@ -305,8 +426,68 @@ export const EmployeeTimesheetPage = () => {
     }
   }, [selectedTaskId, tasks]);
 
+  const handleTimerTransition = async (
+    action: "pause" | "stop",
+    taskId: string,
+    countCompleted?: number,
+  ) => {
+    setLoadingAction(action === "pause" ? "pause-task" : "stop-task");
+    try {
+      await api(`/tasks/${taskId}/timer-transition`, {
+        method: "POST",
+        body: JSON.stringify({
+          timerState:
+            action === "pause" ? TimerState.PAUSED : TimerState.STOPPED,
+          countCompleted,
+        }),
+        suppressGlobalLoader: true,
+      });
+      showSuccessToast(action === "pause" ? "Timer paused" : "Timer stopped");
+      await load();
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleCountActionConfirm = async () => {
+    if (!pendingTimerAction || !currentActionTask) {
+      return;
+    }
+
+    const parsedCount = Number(countInput);
+    if (
+      !Number.isFinite(parsedCount) ||
+      !Number.isInteger(parsedCount) ||
+      parsedCount < 0
+    ) {
+      showErrorToast("Enter a valid whole-number count");
+      return;
+    }
+
+    if (parsedCount > remainingCount) {
+      showErrorToast(
+        `Completed count cannot exceed remaining count (${remainingCount})`,
+      );
+      return;
+    }
+
+    await handleTimerTransition(
+      pendingTimerAction,
+      currentActionTask.id,
+      parsedCount,
+    );
+    setPendingTimerAction(null);
+    setCountInput("");
+  };
+
   return (
     <div className="timesheet-page">
+      <TaskDetailDrawer
+        isOpen={Boolean(drawerTaskId)}
+        onClose={() => setDrawerTaskId(null)}
+        onTaskUpdated={() => load()}
+        taskId={drawerTaskId}
+      />
       <div className="timesheet-section-header">
         <div className="timesheet-header-copy">
           <h2>Work Log Summary</h2>
@@ -324,12 +505,19 @@ export const EmployeeTimesheetPage = () => {
                 }}
                 type="button"
               >
-                {option === "today" ? "Today" : option === "week" ? "Weekly" : "Monthly"}
+                {option === "today"
+                  ? "Today"
+                  : option === "week"
+                    ? "Weekly"
+                    : "Monthly"}
               </button>
             ))}
           </div>
           <div className="manager-week-switcher">
-            <button onClick={() => setOffset((current) => current - 1)} type="button">
+            <button
+              onClick={() => setOffset((current) => current - 1)}
+              type="button"
+            >
               ‹ Prev
             </button>
             <strong>{dashboard?.period.label ?? "Loading range..."}</strong>
@@ -344,49 +532,49 @@ export const EmployeeTimesheetPage = () => {
         </div>
       </div>
       <div className="timesheet-action-row">
-          <select
-            className="timesheet-task-select"
-            value={selectedTaskId}
-            onChange={(event) => setSelectedTaskId(event.target.value)}
-          >
-            <option value="">Select Task</option>
-            {startableTasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {getProjectName(task.projectId)} |{" "}
-                {getActivityName(task.activityId)} | {task.title}
-              </option>
-            ))}
-          </select>
-          {canStartTask ? (
-            <LoadingButton
-              className="timesheet-primary-button"
-              loading={loadingAction === "start-task"}
-              onClick={async () => {
-                setLoadingAction("start-task");
-                setSelectedTaskId(currentActionTask!.id);
-                try {
-                  await api(`/tasks/${currentActionTask!.id}/start-timer`, {
-                    method: "POST",
-                    suppressGlobalLoader: true,
-                  });
-                  showSuccessToast("Timer started");
-                  await load();
-                } finally {
-                  setLoadingAction(null);
-                }
-              }}
-              type="button"
-            >
-              Start Task
-            </LoadingButton>
-          ) : null}
-          <button
-            className="timesheet-secondary-button"
-            onClick={() => setShowManualLogForm((current) => !current)}
+        <select
+          className="timesheet-task-select"
+          value={selectedTaskId}
+          onChange={(event) => setSelectedTaskId(event.target.value)}
+        >
+          <option value="">Select Task</option>
+          {startableTasks.map((task) => (
+            <option key={task.id} value={task.id}>
+              {getProjectName(task.projectId)} |{" "}
+              {getActivityName(task.activityId)} | {task.title}
+            </option>
+          ))}
+        </select>
+        {canStartTask ? (
+          <LoadingButton
+            className="timesheet-primary-button"
+            loading={loadingAction === "start-task"}
+            onClick={async () => {
+              setLoadingAction("start-task");
+              setSelectedTaskId(currentActionTask!.id);
+              try {
+                await api(`/tasks/${currentActionTask!.id}/start-timer`, {
+                  method: "POST",
+                  suppressGlobalLoader: true,
+                });
+                showSuccessToast("Timer started");
+                await load();
+              } finally {
+                setLoadingAction(null);
+              }
+            }}
             type="button"
           >
-            + Log Manually
-          </button>
+            Start Task
+          </LoadingButton>
+        ) : null}
+        <button
+          className="timesheet-secondary-button"
+          onClick={() => setShowManualLogForm((current) => !current)}
+          type="button"
+        >
+          + Log Manually
+        </button>
       </div>
 
       {currentActionTask ? (
@@ -414,6 +602,16 @@ export const EmployeeTimesheetPage = () => {
                     {statusLabelMap[currentActionTask.status]}
                   </span>
                 </span>
+                {currentActionTask.hasCountTracking ? (
+                  <>
+                    <span>|</span>
+                    <span>
+                      Count: {currentActionTask.totalCountCompleted} at{" "}
+                      {currentActionTask.benchmarkMinutesPerCount ?? 0}{" "}
+                      mins/count
+                    </span>
+                  </>
+                ) : null}
               </p>
             </div>
             <div className="timesheet-running-time">
@@ -426,20 +624,15 @@ export const EmployeeTimesheetPage = () => {
                     className="timesheet-secondary-button"
                     loading={loadingAction === "pause-task"}
                     onClick={async () => {
-                      setLoadingAction("pause-task");
-                      try {
-                        await api(`/tasks/${currentActionTask.id}/timer-transition`, {
-                          method: "POST",
-                          body: JSON.stringify({
-                            timerState: TimerState.PAUSED,
-                          }),
-                          suppressGlobalLoader: true,
-                        });
-                        showSuccessToast("Timer paused");
-                        await load();
-                      } finally {
-                        setLoadingAction(null);
+                      if (currentActionTask.hasCountTracking) {
+                        setPendingTimerAction("pause");
+                        setCountInput("");
+                        return;
                       }
+                      await handleTimerTransition(
+                        "pause",
+                        currentActionTask.id,
+                      );
                     }}
                     type="button"
                   >
@@ -449,20 +642,12 @@ export const EmployeeTimesheetPage = () => {
                     className="timesheet-primary-button"
                     loading={loadingAction === "stop-task"}
                     onClick={async () => {
-                      setLoadingAction("stop-task");
-                      try {
-                        await api(`/tasks/${currentActionTask.id}/timer-transition`, {
-                          method: "POST",
-                          body: JSON.stringify({
-                            timerState: TimerState.STOPPED,
-                          }),
-                          suppressGlobalLoader: true,
-                        });
-                        showSuccessToast("Timer stopped");
-                        await load();
-                      } finally {
-                        setLoadingAction(null);
+                      if (currentActionTask.hasCountTracking) {
+                        setPendingTimerAction("stop");
+                        setCountInput("");
+                        return;
                       }
+                      await handleTimerTransition("stop", currentActionTask.id);
                     }}
                     type="button"
                   >
@@ -532,10 +717,13 @@ export const EmployeeTimesheetPage = () => {
                   onClick={async () => {
                     setLoadingAction("mark-completed");
                     try {
-                      await api(`/tasks/${currentActionTask.id}/request-completion`, {
-                        method: "POST",
-                        suppressGlobalLoader: true,
-                      });
+                      await api(
+                        `/tasks/${currentActionTask.id}/request-completion`,
+                        {
+                          method: "POST",
+                          suppressGlobalLoader: true,
+                        },
+                      );
                       showSuccessToast("Task marked as completed");
                       await load();
                     } finally {
@@ -564,7 +752,9 @@ export const EmployeeTimesheetPage = () => {
                   method: "POST",
                   body: JSON.stringify({
                     ...manualLog,
-                    startTimeUtc: new Date(manualLog.startTimeUtc).toISOString(),
+                    startTimeUtc: new Date(
+                      manualLog.startTimeUtc,
+                    ).toISOString(),
                     endTimeUtc: new Date(manualLog.endTimeUtc).toISOString(),
                   }),
                   suppressGlobalLoader: true,
@@ -645,7 +835,11 @@ export const EmployeeTimesheetPage = () => {
                 }))
               }
             />
-            <LoadingButton className="timesheet-primary-button" loading={loadingAction === "manual-log"} type="submit">
+            <LoadingButton
+              className="timesheet-primary-button"
+              loading={loadingAction === "manual-log"}
+              type="submit"
+            >
               Submit Manual Log
             </LoadingButton>
           </form>
@@ -673,6 +867,7 @@ export const EmployeeTimesheetPage = () => {
                 <th>Status</th>
                 <th>Comments</th>
                 <th>Timer</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -685,49 +880,275 @@ export const EmployeeTimesheetPage = () => {
                     sum + (entry.durationSeconds ?? entry.durationMinutes * 60),
                   0,
                 );
+                const detail = expandedTaskDetails[task.id];
+                const isExpanded = expandedTaskId === task.id;
                 return (
-                  <tr
-                    key={task.id}
-                    className={`timesheet-table-row ${selectedTaskId === task.id ? "timesheet-table-row--selected" : ""}`}
-                    onClick={() => {
-                      if (task.status !== TaskStatus.COMPLETED) {
-                        setSelectedTaskId(task.id);
-                      }
-                    }}
-                  >
-                    <td className="timesheet-strong-cell">
-                      {getProjectName(task.projectId)}
-                    </td>
-                    <td>{getActivityName(task.activityId)}</td>
-                    <td>{task.title}</td>
-                    <td>{formatDuration(totalSeconds)}</td>
-                    <td>
-                      <span className={statusClassMap[task.status]}>
-                        {statusLabelMap[task.status]}
-                      </span>
-                    </td>
-                    <td className="timesheet-comment-cell">
-                      {task.description.length > 26
-                        ? `${task.description.slice(0, 26)}...`
-                        : task.description}
-                    </td>
-                    <td>
-                      {runningEntry?.taskId === task.id ? (
-                        <span className="timesheet-status timesheet-status--success">
-                          Active Timer
+                  <Fragment key={task.id}>
+                    <tr
+                      className={`timesheet-table-row ${selectedTaskId === task.id ? "timesheet-table-row--selected" : ""} ${isExpanded ? "manager-task-row--expanded" : ""}`}
+                      onClick={() => {
+                        if (task.status !== TaskStatus.COMPLETED) {
+                          setSelectedTaskId(task.id);
+                        }
+                      }}
+                    >
+                      <td className="timesheet-strong-cell">
+                        {getProjectName(task.projectId)}
+                      </td>
+                      <td>{getActivityName(task.activityId)}</td>
+                      <td>{task.title}</td>
+                      <td>{formatDuration(totalSeconds)}</td>
+                      <td>
+                        <span className={statusClassMap[task.status]}>
+                          {statusLabelMap[task.status]}
                         </span>
-                      ) : (
-                        <span className="timesheet-status timesheet-status--ghost">
-                          Inactive
-                        </span>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="timesheet-comment-cell">
+                        {task.description.length > 26
+                          ? `${task.description.slice(0, 26)}...`
+                          : task.description}
+                      </td>
+                      <td>
+                        {runningEntry?.taskId === task.id ? (
+                          <span className="timesheet-status timesheet-status--success">
+                            Active Timer
+                          </span>
+                        ) : (
+                          <span className="timesheet-status timesheet-status--ghost">
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="manager-task-actions">
+                          <button
+                            className="manager-task-detail-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDrawerTaskId(task.id);
+                            }}
+                            type="button"
+                          >
+                            Detail
+                          </button>
+
+                          <button
+                            className="manager-task-expand-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void toggleExpandedTask(task.id);
+                            }}
+                            title={isExpanded ? "Collapse" : "Expand"}
+                            type="button"
+                          >
+                            {isExpanded ? (
+                              <svg
+                                fill="none"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2.5"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path d="m18 15-6-6-6 6" />
+                              </svg>
+                            ) : (
+                              <svg
+                                fill="none"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2.5"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path d="m6 9 6 6 6-6" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr className="manager-task-expand-row">
+                        <td colSpan={8}>
+                          <div className="manager-task-expand-card">
+                            {expandedLoadingTaskId === task.id && !detail ? (
+                              <p className="manager-dashboard-inactive">
+                                Loading task details...
+                              </p>
+                            ) : detail ? (
+                              <>
+                                <div className="manager-task-expand-meta">
+                                  <div>
+                                    <span>Assignment</span>
+                                    <strong>
+                                      {detail.assignedTeams.length > 0
+                                        ? `Team: ${detail.assignedTeams.map((team) => team.name).join(", ")}`
+                                        : "Direct Employee Assignment"}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Count Tracking</span>
+                                    <strong>
+                                      {detail.task.hasCountTracking
+                                        ? `${detail.task.totalCountCompleted}/${detail.task.countNumber ?? 0} completed`
+                                        : "No"}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Benchmark</span>
+                                    <strong>
+                                      {detail.task.hasCountTracking
+                                        ? `${detail.task.benchmarkMinutesPerCount ?? 0} mins / count`
+                                        : `${detail.task.estimatedHours.toFixed(2)} hours estimated`}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Assigned By</span>
+                                    <strong>
+                                      {detail.createdBy?.fullName ?? "N/A"}
+                                    </strong>
+                                  </div>
+                                </div>
+                                <div className="manager-task-expand-description">
+                                  <span>Description</span>
+                                  <p>{detail.task.description}</p>
+                                </div>
+                                <div className="manager-task-assignee-block">
+                                  <div className="manager-task-assignee-block__header">
+                                    <h4>Employee Status</h4>
+                                    <p>
+                                      Task progress details for each assigned
+                                      employee
+                                    </p>
+                                  </div>
+                                  <div className="manager-task-assignee-grid">
+                                    {detail.assignees.map((assignee) => {
+                                      const assigneeEntries =
+                                        detail.entries.filter(
+                                          (entry) =>
+                                            entry.employeeId === assignee.id,
+                                        );
+                                      const totalLoggedSeconds =
+                                        assigneeEntries.reduce(
+                                          (sum, entry) =>
+                                            sum +
+                                            (entry.durationSeconds ??
+                                              entry.durationMinutes * 60),
+                                          0,
+                                        );
+                                      const totalCountCompleted =
+                                        assigneeEntries.reduce(
+                                          (sum, entry) =>
+                                            sum + (entry.countCompleted ?? 0),
+                                          0,
+                                        );
+                                      const firstStartedAt = assigneeEntries
+                                        .map((entry) => entry.startTimeUtc)
+                                        .sort()[0];
+                                      const lastEndedAt = assigneeEntries
+                                        .map(
+                                          (entry) =>
+                                            entry.endTimeUtc ??
+                                            entry.startTimeUtc,
+                                        )
+                                        .sort()
+                                        .at(-1);
+                                      const assigneeStatus = getAssigneeStatus(
+                                        detail.task,
+                                        assigneeEntries,
+                                      );
+                                      const firstStarted =
+                                        toLocalDateAndTimeParts(
+                                          firstStartedAt,
+                                          assignee.timezone,
+                                        );
+                                      const lastEnded = toLocalDateAndTimeParts(
+                                        lastEndedAt,
+                                        assignee.timezone,
+                                      );
+
+                                      return (
+                                        <article
+                                          key={assignee.id}
+                                          className="manager-task-assignee-card"
+                                        >
+                                          <div className="manager-task-assignee-card__top">
+                                            <div>
+                                              <strong>
+                                                {assignee.fullName}
+                                              </strong>
+                                              <span>{assignee.email}</span>
+                                            </div>
+                                            <span
+                                              className={
+                                                assigneeStatus.className
+                                              }
+                                            >
+                                              {assigneeStatus.label}
+                                            </span>
+                                          </div>
+                                          <div className="manager-task-assignee-card__metrics">
+                                            <div>
+                                              <span>Logged</span>
+                                              <strong>
+                                                {formatDuration(
+                                                  totalLoggedSeconds,
+                                                )}
+                                              </strong>
+                                            </div>
+                                            <div>
+                                              <span>Start Time</span>
+                                              <strong className="task-date-time-cell">
+                                                <span>{firstStarted.date}</span>
+                                                <span>{firstStarted.time}</span>
+                                              </strong>
+                                            </div>
+                                            <div>
+                                              <span>End Time</span>
+                                              <strong className="task-date-time-cell">
+                                                <span>{lastEnded.date}</span>
+                                                <span>{lastEnded.time}</span>
+                                              </strong>
+                                            </div>
+                                            {detail.task.hasCountTracking ? (
+                                              <div>
+                                                <span>Count Completed</span>
+                                                <strong>
+                                                  {totalCountCompleted}
+                                                </strong>
+                                              </div>
+                                            ) : null}
+                                            <div>
+                                              <span>Sessions</span>
+                                              <strong>
+                                                {assigneeEntries.length}
+                                              </strong>
+                                            </div>
+                                          </div>
+                                        </article>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="manager-dashboard-inactive">
+                                Task details could not be loaded.
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
               {periodTasks.length === 0 ? (
                 <tr>
-                  <td className="employee-task-table__empty" colSpan={7}>
+                  <td className="employee-task-table__empty" colSpan={8}>
                     No entries found for the selected period.
                   </td>
                 </tr>
@@ -763,6 +1184,61 @@ export const EmployeeTimesheetPage = () => {
           })}
         </div>
       </section>
+      {pendingTimerAction && currentActionTask ? (
+        <div
+          className="task-modal-overlay"
+          onClick={() => setPendingTimerAction(null)}
+          role="presentation"
+        >
+          <div
+            className="task-modal task-modal--compact"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="task-modal__close task-modal__close--floating"
+              onClick={() => setPendingTimerAction(null)}
+              type="button"
+            >
+              ×
+            </button>
+            <h3 className="task-modal__success-title">Enter Count</h3>
+            <p className="task-modal__success-copy">
+              Add the completed count for this session before you{" "}
+              {pendingTimerAction === "pause" ? "pause" : "stop"} the timer.
+            </p>
+            <p className="task-modal__success-copy">
+              Remaining count: {remainingCount} out of{" "}
+              {currentActionTask.countNumber ?? 0}
+            </p>
+            <input
+              className="task-modal__input"
+              min="0"
+              max={remainingCount}
+              step="1"
+              type="number"
+              value={countInput}
+              onChange={(event) => setCountInput(event.target.value)}
+            />
+            <div className="task-modal__actions">
+              <button
+                className="timesheet-secondary-button"
+                onClick={() => setPendingTimerAction(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                className="timesheet-primary-button"
+                loading={loadingAction === `${pendingTimerAction}-task`}
+                onClick={() => void handleCountActionConfirm()}
+                type="button"
+              >
+                Confirm
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

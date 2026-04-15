@@ -26,6 +26,7 @@ export const EmployeeLayout = () => {
       navigation={[
         { to: "/employee/timesheet", label: "My Timesheet" },
         { to: "/employee/tasks", label: "My Tasks" },
+        { to: "/employee/teams", label: "My Teams" },
         { to: "/employee/approvals", label: "Pending Approvals" },
         { to: "/employee/calendar", label: "Calendar" },
       ]}
@@ -65,6 +66,7 @@ export const AdminLayout = () => {
       subtitle="Administration Portal"
       navigation={[
         { to: "/admin/users", label: "Users" },
+        { to: "/admin/teams", label: "Teams" },
         { to: "/admin/calendar", label: "Calendar" },
       ]}
       footer={`${user?.fullName ?? ""} | ${UserRole.ADMIN}`}

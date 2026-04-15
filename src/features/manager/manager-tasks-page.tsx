@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { TaskDetailDrawer } from "@/components/task-detail-drawer";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -7,9 +7,11 @@ import {
   TaskStatus,
   toLocalDate,
   toLocalDateAndTimeParts,
+  TimerState,
   type Activity,
   type Project,
   type Task,
+  type Team,
   type TimeEntry,
   type User,
 } from "@/shared";
@@ -35,6 +37,17 @@ const statusToneMap: Record<TaskStatus, string> = {
 };
 
 type Period = "today" | "week" | "month";
+
+type TaskDetailResponse = {
+  task: Task;
+  entries: TimeEntry[];
+  project: Project | null;
+  activity: Activity | null;
+  assignee: User | null;
+  assignees: User[];
+  assignedTeams: Team[];
+  createdBy: User | null;
+};
 
 const formatDurationCompact = (seconds: number) => {
   const safeSeconds = Math.max(0, seconds);
@@ -139,6 +152,9 @@ export const ManagerTasksPage = () => {
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState(1);
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [expandedTaskDetails, setExpandedTaskDetails] = useState<Record<string, TaskDetailResponse>>({});
+  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<string | null>(null);
 
   const debouncedSearch = useDebounce(searchInput.trim(), 400);
 
@@ -235,6 +251,53 @@ export const ManagerTasksPage = () => {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
   const pagedTasks = filteredTasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const toggleExpandedTask = async (taskId: string) => {
+    if (expandedTaskId === taskId) {
+      setExpandedTaskId(null);
+      return;
+    }
+
+    setExpandedTaskId(taskId);
+
+    if (expandedTaskDetails[taskId]) {
+      return;
+    }
+
+    setExpandedLoadingTaskId(taskId);
+    try {
+      const detail = await api<TaskDetailResponse>(`/tasks/${taskId}`);
+      setExpandedTaskDetails((current) => ({ ...current, [taskId]: detail }));
+    } finally {
+      setExpandedLoadingTaskId(null);
+    }
+  };
+
+  const getAssigneeStatus = (task: Task, employeeEntries: TimeEntry[]) => {
+    if (employeeEntries.some((entry) => entry.timerState === TimerState.RUNNING)) {
+      return { label: "WIP", className: statusToneMap[TaskStatus.WIP] };
+    }
+
+    if (employeeEntries.length === 0) {
+      return { label: "Not Started", className: "employee-task-pill employee-task-pill--neutral" };
+    }
+
+    const latestEntry = [...employeeEntries].sort(
+      (left, right) =>
+        new Date(right.endTimeUtc ?? right.startTimeUtc).getTime() -
+        new Date(left.endTimeUtc ?? left.startTimeUtc).getTime(),
+    )[0];
+
+    if (task.status === TaskStatus.COMPLETED) {
+      return { label: "Completed", className: statusToneMap[TaskStatus.COMPLETED] };
+    }
+
+    if (latestEntry?.timerState === TimerState.PAUSED) {
+      return { label: "On Hold", className: statusToneMap[TaskStatus.ON_HOLD] };
+    }
+
+    return { label: "Stopped", className: "employee-task-pill employee-task-pill--pending" };
+  };
 
   return (
     <div className="employee-tasks-page">
@@ -343,45 +406,192 @@ export const ManagerTasksPage = () => {
               <th className="employee-task-table__time-column">End Time</th>
               <th>Est. Hours</th>
               <th>Logged</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {pagedTasks.map((task, index) => {
-              const assignee = employeeMap.get(task.assigneeId);
-              const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, assignee?.timezone);
-              const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, assignee?.timezone);
+              const assigneeIds = task.assigneeIds?.length ? task.assigneeIds : [task.assigneeId];
+              const assignees = assigneeIds.map((assigneeId) => employeeMap.get(assigneeId)).filter(Boolean);
+              const primaryAssignee = assignees[0];
+              const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, primaryAssignee?.timezone);
+              const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, primaryAssignee?.timezone);
+              const detail = expandedTaskDetails[task.id];
+              const isExpanded = expandedTaskId === task.id;
 
               return (
-                <tr key={task.id} className="employee-task-table__row" onClick={() => setDrawerTaskId(task.id)}>
-                  <td>{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td>
-                  <td className="employee-task-table__strong">{task.title}</td>
-                  <td>{projectNameMap.get(task.projectId) ?? task.projectId}</td>
-                  <td>{activityNameMap.get(task.activityId) ?? task.activityId}</td>
-                  <td>{assignee?.fullName ?? task.assigneeId}</td>
-                  <td>
-                    <span className={statusToneMap[task.status]}>{statusLabelMap[task.status]}</span>
-                  </td>
-                  <td>{toLocalDate(task.dueDateUtc, assignee?.timezone)}</td>
-                  <td className="employee-task-table__time-column">
-                    <div className="task-date-time-cell">
-                      <span>{startedAt.date}</span>
-                      <span>{startedAt.time}</span>
-                    </div>
-                  </td>
-                  <td className="employee-task-table__time-column">
-                    <div className="task-date-time-cell">
-                      <span>{completedAt.date}</span>
-                      <span>{completedAt.time}</span>
-                    </div>
-                  </td>
-                  <td>{task.estimatedHours.toFixed(2)}</td>
-                  <td>{formatDurationCompact(loggedSecondsMap.get(task.id) ?? 0)}</td>
-                </tr>
+                <Fragment key={task.id}>
+                  <tr
+                    className={`employee-task-table__row ${isExpanded ? "manager-task-row--expanded" : ""}`}
+                    onClick={() => void toggleExpandedTask(task.id)}
+                  >
+                    <td>{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td>
+                    <td className="employee-task-table__strong">{task.title}</td>
+                    <td>{projectNameMap.get(task.projectId) ?? task.projectId}</td>
+                    <td>{activityNameMap.get(task.activityId) ?? task.activityId}</td>
+                    <td>{assignees.map((assignee) => assignee!.fullName).join(", ") || task.assigneeId}</td>
+                    <td>
+                      <span className={statusToneMap[task.status]}>{statusLabelMap[task.status]}</span>
+                    </td>
+                    <td>{toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}</td>
+                    <td className="employee-task-table__time-column">
+                      <div className="task-date-time-cell">
+                        <span>{startedAt.date}</span>
+                        <span>{startedAt.time}</span>
+                      </div>
+                    </td>
+                    <td className="employee-task-table__time-column">
+                      <div className="task-date-time-cell">
+                        <span>{completedAt.date}</span>
+                        <span>{completedAt.time}</span>
+                      </div>
+                    </td>
+                    <td>{task.estimatedHours.toFixed(2)}</td>
+                    <td>{formatDurationCompact(loggedSecondsMap.get(task.id) ?? 0)}</td>
+                    <td>
+                      <button
+                        className="manager-task-detail-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDrawerTaskId(task.id);
+                        }}
+                        type="button"
+                      >
+                        Detail
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded ? (
+                    <tr className="manager-task-expand-row">
+                      <td colSpan={12}>
+                        <div className="manager-task-expand-card">
+                          {expandedLoadingTaskId === task.id && !detail ? (
+                            <p className="manager-dashboard-inactive">Loading task details...</p>
+                          ) : detail ? (
+                            <>
+                              <div className="manager-task-expand-meta">
+                                <div>
+                                  <span>Assignment</span>
+                                  <strong>
+                                    {detail.assignedTeams.length > 0
+                                      ? `Team: ${detail.assignedTeams.map((team) => team.name).join(", ")}`
+                                      : "Direct Employee Assignment"}
+                                  </strong>
+                                </div>
+                                <div>
+                                  <span>Count Tracking</span>
+                                  <strong>
+                                    {detail.task.hasCountTracking
+                                      ? `${detail.task.totalCountCompleted}/${detail.task.countNumber ?? 0} completed`
+                                      : "No"}
+                                  </strong>
+                                </div>
+                                <div>
+                                  <span>Benchmark</span>
+                                  <strong>
+                                    {detail.task.hasCountTracking
+                                      ? `${detail.task.benchmarkMinutesPerCount ?? 0} mins / count`
+                                      : `${detail.task.estimatedHours.toFixed(2)} hours estimated`}
+                                  </strong>
+                                </div>
+                                <div>
+                                  <span>Assigned By</span>
+                                  <strong>{detail.createdBy?.fullName ?? "N/A"}</strong>
+                                </div>
+                              </div>
+                              <div className="manager-task-expand-description">
+                                <span>Description</span>
+                                <p>{detail.task.description}</p>
+                              </div>
+                              <div className="manager-task-assignee-block">
+                                <div className="manager-task-assignee-block__header">
+                                  <h4>Employee Status</h4>
+                                  <p>
+                                    {detail.assignedTeams.length > 0
+                                      ? "Team assignment details for each employee"
+                                      : "Task progress details for each assigned employee"}
+                                  </p>
+                                </div>
+                                <div className="manager-task-assignee-grid">
+                                  {detail.assignees.map((assignee) => {
+                                    const employeeEntries = detail.entries.filter((entry) => entry.employeeId === assignee.id);
+                                    const totalLoggedSeconds = employeeEntries.reduce(
+                                      (sum, entry) => sum + (entry.durationSeconds ?? entry.durationMinutes * 60),
+                                      0,
+                                    );
+                                    const totalCountCompleted = employeeEntries.reduce(
+                                      (sum, entry) => sum + (entry.countCompleted ?? 0),
+                                      0,
+                                    );
+                                    const firstStartedAt = employeeEntries
+                                      .map((entry) => entry.startTimeUtc)
+                                      .sort()[0];
+                                    const lastEndedAt = employeeEntries
+                                      .map((entry) => entry.endTimeUtc ?? entry.startTimeUtc)
+                                      .sort()
+                                      .at(-1);
+                                    const employeeStatus = getAssigneeStatus(detail.task, employeeEntries);
+                                    const firstStarted = toLocalDateAndTimeParts(firstStartedAt, assignee.timezone);
+                                    const lastEnded = toLocalDateAndTimeParts(lastEndedAt, assignee.timezone);
+
+                                    return (
+                                      <article key={assignee.id} className="manager-task-assignee-card">
+                                        <div className="manager-task-assignee-card__top">
+                                          <div>
+                                            <strong>{assignee.fullName}</strong>
+                                            <span>{assignee.email}</span>
+                                          </div>
+                                          <span className={employeeStatus.className}>{employeeStatus.label}</span>
+                                        </div>
+                                        <div className="manager-task-assignee-card__metrics">
+                                          <div>
+                                            <span>Logged</span>
+                                            <strong>{formatDurationCompact(totalLoggedSeconds)}</strong>
+                                          </div>
+                                          <div>
+                                            <span>Start Time</span>
+                                            <strong className="task-date-time-cell">
+                                              <span>{firstStarted.date}</span>
+                                              <span>{firstStarted.time}</span>
+                                            </strong>
+                                          </div>
+                                          <div>
+                                            <span>End Time</span>
+                                            <strong className="task-date-time-cell">
+                                              <span>{lastEnded.date}</span>
+                                              <span>{lastEnded.time}</span>
+                                            </strong>
+                                          </div>
+                                          {detail.task.hasCountTracking ? (
+                                            <div>
+                                              <span>Count Completed</span>
+                                              <strong>{totalCountCompleted}</strong>
+                                            </div>
+                                          ) : null}
+                                          <div>
+                                            <span>Sessions</span>
+                                            <strong>{employeeEntries.length}</strong>
+                                          </div>
+                                        </div>
+                                      </article>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="manager-dashboard-inactive">Task details could not be loaded.</p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
             {pagedTasks.length === 0 ? (
               <tr>
-                <td className="employee-task-table__empty" colSpan={11}>
+                <td className="employee-task-table__empty" colSpan={12}>
                   No tasks matched the current filters.
                 </td>
               </tr>

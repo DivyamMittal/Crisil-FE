@@ -6,6 +6,7 @@ import { UserRole } from "@/shared";
 
 import { RoleGuard } from "./guard";
 import { AdminPage } from "../features/admin/admin-page";
+import { AdminTeamsPage } from "../features/admin/admin-teams-page";
 import { LoginPage } from "../features/auth/login-page";
 import { EmployeePendingApprovalsPage } from "../features/approvals/employee-pending-approvals";
 import { useAuth } from "../features/auth/auth-context";
@@ -17,6 +18,7 @@ import { ManagerProjectsPage } from "../features/manager/manager-projects-page";
 import { ManagerTasksPage } from "../features/manager/manager-tasks-page";
 import { ManagerTeamPage } from "../features/manager/manager-team-page";
 import { ForbiddenPage, NotFoundPage } from "../features/system/status-pages";
+import { EmployeeTeamPage } from "../features/tasks/employee-team-page";
 import { EmployeeTasksPage } from "../features/tasks/employee-tasks";
 import { AdminLayout, EmployeeLayout, ManagerLayout } from "../layouts/role-layouts";
 
@@ -48,6 +50,7 @@ export const App = () => {
             <Route path="/employee" element={<EmployeeLayout />}>
               <Route path="timesheet" element={<EmployeeTimesheetPage />} />
               <Route path="tasks" element={<EmployeeTasksPage />} />
+              <Route path="teams" element={<EmployeeTeamPage />} />
               <Route path="approvals" element={<EmployeePendingApprovalsPage />} />
               <Route path="calendar" element={<CalendarPage />} />
             </Route>
@@ -67,6 +70,7 @@ export const App = () => {
           <Route element={<RoleGuard role={role} allowed={[UserRole.ADMIN]} />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="users" element={<AdminPage title="User Management" />} />
+              <Route path="teams" element={<AdminTeamsPage />} />
               <Route path="calendar" element={<CalendarPage />} />
             </Route>
           </Route>

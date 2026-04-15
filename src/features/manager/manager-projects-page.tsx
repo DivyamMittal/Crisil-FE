@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 
-import { Priority, ProjectStatus, TaskStatus, toLocalDate, toLocalDateAndTimeParts, type Task, type User } from "@/shared";
+import {
+  Priority,
+  ProjectStatus,
+  TaskStatus,
+  toLocalDate,
+  toLocalDateAndTimeParts,
+  type Task,
+  type Team,
+  type User,
+} from "@/shared";
 import { LoadingButton } from "@/components/loading-button";
 import { Card, SectionTitle } from "@/ui";
 import { api } from "@/lib/api";
@@ -31,10 +40,14 @@ const taskStatusLabelMap: Record<TaskStatus, string> = {
 };
 
 export const ManagerProjectsPage = () => {
+  const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<"HOUR" | "MIN">("HOUR");
+  const [benchmarkUnit, setBenchmarkUnit] = useState<"HOUR" | "MIN">("MIN");
+  const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<User[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [projectForm, setProjectForm] = useState({
     code: "",
     name: "",
@@ -54,32 +67,57 @@ export const ManagerProjectsPage = () => {
     activityId: "",
     title: "",
     description: "",
+    assignmentType: "EMPLOYEE" as "EMPLOYEE" | "TEAM",
+    assignedTeamId: "",
+    assigneeIds: [] as string[],
     assigneeId: "",
     priority: Priority.MEDIUM,
     estimatedHours: 8,
+    hasCountTracking: false,
+    countNumber: 1,
+    benchmarkMinutesPerCount: 30,
     dueDateUtc: new Date(Date.now() + 2 * 86400000).toISOString(),
   });
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [submittingSection, setSubmittingSection] = useState<"project" | "activity" | "task" | null>(null);
-  const activeEmployees = employees.filter((employee) => employee.isActive);
+  const knownEmployees = [
+    ...new Map(
+      [...employees, ...teams.flatMap((team) => team.members ?? [])].map((employee) => [employee.id, employee]),
+    ).values(),
+  ];
+  const activeEmployees = knownEmployees.filter((employee) => employee.isActive);
 
   const load = async () => {
-    const [projectsData, activitiesData, tasksData, employeesData] = await Promise.all([
+    const [projectsData, activitiesData, tasksData, employeesData, teamsData] = await Promise.all([
       api<Project[]>("/projects"),
       api<Activity[]>("/activities"),
       api<Task[]>("/tasks"),
       api<User[]>("/users?scope=team&role=EMPLOYEE"),
+      api<Team[]>("/teams?scope=all"),
     ]);
 
     setProjects(projectsData);
     setActivities(activitiesData);
     setTasks(tasksData);
     setEmployees(employeesData);
+    setTeams(teamsData);
   };
 
   useEffect(() => {
     void load();
   }, []);
+
+  const benchmarkValue =
+    benchmarkUnit === "HOUR"
+      ? taskForm.benchmarkMinutesPerCount / 60
+      : taskForm.benchmarkMinutesPerCount;
+  const calculatedEstimatedMinutes = taskForm.hasCountTracking
+    ? taskForm.countNumber * taskForm.benchmarkMinutesPerCount
+    : taskForm.estimatedHours * 60;
+  const estimatedHoursDisplayValue =
+    estimatedHoursUnit === "HOUR"
+      ? Number((calculatedEstimatedMinutes / 60).toFixed(2))
+      : calculatedEstimatedMinutes;
 
   return (
     <div className="manager-dashboard-page">
@@ -173,9 +211,41 @@ export const ManagerProjectsPage = () => {
             event.preventDefault();
             setSubmittingSection("task");
             try {
-              await api("/tasks", { method: "POST", body: JSON.stringify(taskForm), suppressGlobalLoader: true });
+              const payload = {
+                ...taskForm,
+                assigneeIds:
+                  taskForm.assignmentType === "EMPLOYEE"
+                    ? taskForm.hasCountTracking
+                      ? taskForm.assigneeIds
+                      : [taskForm.assigneeId]
+                    : [],
+                assignedTeamIds:
+                  taskForm.assignmentType === "TEAM" && taskForm.assignedTeamId
+                    ? [taskForm.assignedTeamId]
+                    : [],
+                countNumber: taskForm.hasCountTracking ? taskForm.countNumber : null,
+                benchmarkMinutesPerCount: taskForm.hasCountTracking ? taskForm.benchmarkMinutesPerCount : null,
+                estimatedHours: taskForm.hasCountTracking
+                  ? calculatedEstimatedMinutes / 60
+                  : estimatedHoursUnit === "HOUR"
+                    ? taskForm.estimatedHours
+                    : taskForm.estimatedHours / 60,
+              };
+              await api("/tasks", { method: "POST", body: JSON.stringify(payload), suppressGlobalLoader: true });
               showSuccessToast("Task created successfully");
-              setTaskForm((current) => ({ ...current, title: "", description: "" }));
+              setTaskForm((current) => ({
+                ...current,
+                title: "",
+                description: "",
+                assignmentType: "EMPLOYEE",
+                assignedTeamId: "",
+                assigneeIds: [],
+                assigneeId: "",
+                hasCountTracking: false,
+                countNumber: 1,
+                benchmarkMinutesPerCount: 30,
+              }));
+              setAssigneeDropdownOpen(false);
               await load();
             } finally {
               setSubmittingSection(null);
@@ -206,15 +276,6 @@ export const ManagerProjectsPage = () => {
             <span className="manager-form-label">Task Title</span>
             <input className="input" placeholder="Model Audit" value={taskForm.title} onChange={(e) => setTaskForm((current) => ({ ...current, title: e.target.value }))} />
           </label>
-          <label className="field">
-            <span className="manager-form-label">Assign Employee</span>
-            <select className="input" value={taskForm.assigneeId} onChange={(e) => setTaskForm((current) => ({ ...current, assigneeId: e.target.value }))}>
-              <option value="">Assign employee</option>
-              {activeEmployees.map((employee) => (
-                <option key={employee.id} value={employee.id}>{employee.fullName}</option>
-              ))}
-            </select>
-          </label>
           <label className="field field--full">
             <span className="manager-form-label">Task Description</span>
             <textarea className="input textarea" placeholder="Enter task description" value={taskForm.description} onChange={(e) => setTaskForm((current) => ({ ...current, description: e.target.value }))} />
@@ -229,8 +290,111 @@ export const ManagerProjectsPage = () => {
           </label>
           <label className="field">
             <span className="manager-form-label">Estimated Hours</span>
-            <input className="input" type="number" min="1" value={taskForm.estimatedHours} onChange={(e) => setTaskForm((current) => ({ ...current, estimatedHours: Number(e.target.value) }))} />
+            <div className="manager-unit-field">
+              <input
+                className="input"
+                min="0.25"
+                readOnly={taskForm.hasCountTracking}
+                type="number"
+                value={estimatedHoursDisplayValue}
+                onChange={(e) => setTaskForm((current) => ({ ...current, estimatedHours: Number(e.target.value) }))}
+              />
+              <div className="employee-tasks-view-toggle manager-unit-toggle">
+                <button className={estimatedHoursUnit === "HOUR" ? "is-active" : ""} onClick={() => setEstimatedHoursUnit("HOUR")} type="button">
+                  Hour
+                </button>
+                <button className={estimatedHoursUnit === "MIN" ? "is-active" : ""} onClick={() => setEstimatedHoursUnit("MIN")} type="button">
+                  Min
+                </button>
+              </div>
+            </div>
           </label>
+          <label className="field">
+            <span className="manager-form-label">Assign To</span>
+            <select
+              className="input"
+              value={taskForm.assignmentType}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  assignmentType: e.target.value as "EMPLOYEE" | "TEAM",
+                  assignedTeamId: "",
+                  assigneeId: "",
+                  assigneeIds: [],
+                }))
+              }
+            >
+              <option value="EMPLOYEE">Employee</option>
+              <option value="TEAM">Team</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="manager-form-label">Count Based Task</span>
+            <select
+              className="input"
+              value={taskForm.hasCountTracking ? "YES" : "NO"}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  hasCountTracking: e.target.value === "YES",
+                  assigneeIds:
+                    current.assignmentType === "EMPLOYEE" && e.target.value === "YES"
+                      ? current.assigneeIds
+                      : [],
+                }))
+              }
+            >
+              <option value="NO">No</option>
+              <option value="YES">Yes</option>
+            </select>
+          </label>
+          {taskForm.hasCountTracking ? (
+            <>
+              <label className="field">
+                <span className="manager-form-label">Count Number</span>
+                <input
+                  className="input"
+                  min="1"
+                  type="number"
+                  value={taskForm.countNumber}
+                  onChange={(e) =>
+                    setTaskForm((current) => ({
+                      ...current,
+                      countNumber: Number(e.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span className="manager-form-label">Benchmark / Count</span>
+                <div className="manager-unit-field">
+                  <input
+                    className="input"
+                    min="1"
+                    type="number"
+                    value={benchmarkValue}
+                    onChange={(e) =>
+                      setTaskForm((current) => ({
+                        ...current,
+                        benchmarkMinutesPerCount:
+                          benchmarkUnit === "HOUR"
+                            ? Number(e.target.value) * 60
+                            : Number(e.target.value),
+                      }))
+                    }
+                  />
+                  <div className="employee-tasks-view-toggle manager-unit-toggle">
+                    <button className={benchmarkUnit === "HOUR" ? "is-active" : ""} onClick={() => setBenchmarkUnit("HOUR")} type="button">
+                      Hour
+                    </button>
+                    <button className={benchmarkUnit === "MIN" ? "is-active" : ""} onClick={() => setBenchmarkUnit("MIN")} type="button">
+                      Min
+                    </button>
+                  </div>
+                </div>
+              </label>
+            </>
+          ) : null}
           <label className="field">
             <span className="manager-form-label">Due Date</span>
             <input
@@ -245,7 +409,92 @@ export const ManagerProjectsPage = () => {
               }
             />
           </label>
-          <div className="manager-form-actions">
+          <label className="field field--full">
+            <span className="manager-form-label">
+              {taskForm.assignmentType === "TEAM"
+                ? "Assign Team"
+                : taskForm.hasCountTracking
+                  ? "Assign Employees"
+                  : "Assign Employee"}
+            </span>
+            {taskForm.assignmentType === "TEAM" ? (
+              <select
+                className="input"
+                value={taskForm.assignedTeamId}
+                onChange={(e) =>
+                  setTaskForm((current) => ({
+                    ...current,
+                    assignedTeamId: e.target.value,
+                  }))
+                }
+              >
+                <option value="">Select team</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            ) : taskForm.hasCountTracking ? (
+              <div className="manager-multiselect">
+                <button
+                  className="manager-multiselect__trigger"
+                  onClick={() => setAssigneeDropdownOpen((current) => !current)}
+                  type="button"
+                >
+                  <span>
+                    {taskForm.assigneeIds.length > 0
+                      ? activeEmployees
+                          .filter((employee) => taskForm.assigneeIds.includes(employee.id))
+                          .map((employee) => employee.fullName)
+                          .join(", ")
+                      : "Select employees"}
+                  </span>
+                  <span>{assigneeDropdownOpen ? "▴" : "▾"}</span>
+                </button>
+                {assigneeDropdownOpen ? (
+                  <div className="manager-multiselect__menu">
+                    {activeEmployees.map((employee) => (
+                      <label key={employee.id} className="manager-checkbox-item">
+                        <input
+                          checked={taskForm.assigneeIds.includes(employee.id)}
+                          onChange={(event) =>
+                            setTaskForm((current) => ({
+                              ...current,
+                              assigneeIds: event.target.checked
+                                ? [...current.assigneeIds, employee.id]
+                                : current.assigneeIds.filter((assigneeId) => assigneeId !== employee.id),
+                            }))
+                          }
+                          type="checkbox"
+                        />
+                        <span>{employee.fullName}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <select
+                className="input"
+                value={taskForm.assigneeId}
+                onChange={(e) =>
+                  setTaskForm((current) => ({
+                    ...current,
+                    assigneeId: e.target.value,
+                  }))
+                }
+              >
+                <option value="">Assign employee</option>
+                {activeEmployees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.fullName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+          <div className="manager-form-actions manager-form-actions--full">
             <LoadingButton className="timesheet-primary-button" loading={submittingSection === "task"} type="submit">Create Task</LoadingButton>
           </div>
         </form>
@@ -272,18 +521,26 @@ export const ManagerProjectsPage = () => {
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const assignee = employees.find((employee) => employee.id === task.assigneeId);
-                const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, assignee?.timezone);
-                const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, assignee?.timezone);
+                const assignees = knownEmployees.filter((employee) =>
+                  (task.assigneeIds ?? [task.assigneeId]).includes(employee.id),
+                );
+                const taskTeams = teams.filter((team) => (task.assignedTeamIds ?? []).includes(team.id));
+                const primaryAssignee = assignees[0];
+                const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, primaryAssignee?.timezone);
+                const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, primaryAssignee?.timezone);
 
                 return (
                   <tr key={task.id} onClick={() => setDrawerTaskId(task.id)}>
                     <td className="manager-dashboard-table__strong">{task.title}</td>
                     <td>{projects.find((project) => project.id === task.projectId)?.name ?? task.projectId}</td>
                     <td>{activities.find((activity) => activity.id === task.activityId)?.name ?? task.activityId}</td>
-                    <td>{assignee?.fullName ?? task.assigneeId}</td>
+                    <td>
+                      {taskTeams.length > 0
+                        ? `${taskTeams.map((team) => team.name).join(", ")} (${assignees.length} members)`
+                        : assignees.map((employee) => employee.fullName).join(", ") || task.assigneeId}
+                    </td>
                     <td>{taskStatusLabelMap[task.status]}</td>
-                    <td>{toLocalDate(task.dueDateUtc, assignee?.timezone)}</td>
+                    <td>{toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}</td>
                     <td>
                       <div className="task-date-time-cell">
                         <span>{startedAt.date}</span>

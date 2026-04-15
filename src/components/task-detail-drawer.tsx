@@ -14,12 +14,13 @@ import {
   type Comment,
   type Project,
   type Task,
+  type Team,
   type TimeEntry,
   type User,
 } from "@/shared";
 import { LoadingButton } from "@/components/loading-button";
 import { api } from "@/lib/api";
-import { showSuccessToast } from "@/lib/toast";
+import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { useAuth } from "@/features/auth/auth-context";
 
 type TaskDetailResponse = {
@@ -30,6 +31,8 @@ type TaskDetailResponse = {
   project: Project | null;
   activity: Activity | null;
   assignee: User | null;
+  assignees: User[];
+  assignedTeams: Team[];
   createdBy: User | null;
   commentAuthors: User[];
 };
@@ -102,6 +105,8 @@ export const TaskDetailDrawer = ({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [pendingTimerAction, setPendingTimerAction] = useState<"pause" | "stop" | null>(null);
+  const [countInput, setCountInput] = useState("");
   const [requestedDueDate, setRequestedDueDate] = useState("");
   const [requestReason, setRequestReason] = useState("");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -210,6 +215,12 @@ export const TaskDetailDrawer = ({
 
   const task = detail?.task ?? null;
   const approvals = detail?.approvals ?? [];
+  const taskAssigneeIds = task?.assigneeIds?.length ? task.assigneeIds : task?.assigneeId ? [task.assigneeId] : [];
+  const assignedToLabel =
+    detail?.assignees?.length
+      ? detail.assignees.map((assignee) => assignee.fullName).join(", ")
+      : detail?.assignee?.fullName ?? "N/A";
+  const assignedTeamLabel = detail?.assignedTeams?.map((team) => team.name).join(", ") || "Direct employee assignment";
   const taskTimeZone =
     user?.userRole === UserRole.MANAGER ? detail?.assignee?.timezone : user?.timezone;
   const startedAt = toLocalDateAndTimeParts(detail?.task.startedAtUtc, taskTimeZone);
@@ -217,20 +228,21 @@ export const TaskDetailDrawer = ({
   const estimatedSeconds = (task?.estimatedHours ?? 0) * 3600;
   const completionPercent =
     estimatedSeconds > 0 ? Math.min(100, Math.round((loggedSeconds / estimatedSeconds) * 100)) : 0;
+  const remainingCount = Math.max(0, (task?.countNumber ?? 0) - (task?.totalCountCompleted ?? 0));
 
   const canControlTimer =
     user?.userRole === UserRole.EMPLOYEE &&
-    task?.assigneeId === user.id &&
-    task.status !== TaskStatus.COMPLETED &&
-    task.status !== TaskStatus.APPROVAL_PENDING;
+    taskAssigneeIds.includes(user.id) &&
+    task?.status !== TaskStatus.COMPLETED &&
+    task?.status !== TaskStatus.APPROVAL_PENDING;
 
   const canRequestCompletion =
     user?.userRole === UserRole.EMPLOYEE &&
-    task?.assigneeId === user.id &&
-    task.status !== TaskStatus.PENDING &&
-    task.status !== TaskStatus.WIP &&
-    task.status !== TaskStatus.COMPLETED &&
-    task.status !== TaskStatus.APPROVAL_PENDING;
+    taskAssigneeIds.includes(user.id) &&
+    task?.status !== TaskStatus.PENDING &&
+    task?.status !== TaskStatus.WIP &&
+    task?.status !== TaskStatus.COMPLETED &&
+    task?.status !== TaskStatus.APPROVAL_PENDING;
 
   const handleTaskRefresh = async (successMessage?: string) => {
     await load();
@@ -244,7 +256,7 @@ export const TaskDetailDrawer = ({
     }
   };
 
-  const handleTimerAction = async (action: "start" | "pause" | "stop") => {
+  const handleTimerAction = async (action: "start" | "pause" | "stop", countCompleted?: number) => {
     if (!detail) {
       return;
     }
@@ -269,6 +281,7 @@ export const TaskDetailDrawer = ({
         method: "POST",
         body: JSON.stringify({
           timerState: action === "pause" ? TimerState.PAUSED : TimerState.STOPPED,
+          countCompleted,
         }),
         suppressGlobalLoader: true,
       });
@@ -276,6 +289,27 @@ export const TaskDetailDrawer = ({
     } finally {
       setLoadingAction(null);
     }
+  };
+
+  const handleCountActionConfirm = async () => {
+    if (!pendingTimerAction) {
+      return;
+    }
+
+    const parsedCount = Number(countInput);
+    if (!Number.isFinite(parsedCount) || !Number.isInteger(parsedCount) || parsedCount < 0) {
+      showErrorToast("Enter a valid whole-number count");
+      return;
+    }
+
+    if (parsedCount > remainingCount) {
+      showErrorToast(`Completed count cannot exceed remaining count (${remainingCount})`);
+      return;
+    }
+
+    await handleTimerAction(pendingTimerAction, parsedCount);
+    setPendingTimerAction(null);
+    setCountInput("");
   };
 
   const handleCommentSubmit = async () => {
@@ -406,9 +440,13 @@ export const TaskDetailDrawer = ({
                 {user?.userRole === UserRole.MANAGER ? (
                   <div>
                     <span>Assigned To</span>
-                    <strong>{detail.assignee?.fullName ?? "N/A"}</strong>
+                    <strong>{assignedToLabel}</strong>
                   </div>
                 ) : null}
+                <div>
+                  <span>Assigned Team</span>
+                  <strong>{assignedTeamLabel}</strong>
+                </div>
                 {user?.userRole === UserRole.EMPLOYEE ? (
                   <div>
                     <span>Assigned By</span>
@@ -427,6 +465,22 @@ export const TaskDetailDrawer = ({
                   <span>Status</span>
                   <strong>{statusLabelMap[detail.task.status]}</strong>
                 </div>
+                <div>
+                  <span>Count Based</span>
+                  <strong>{detail.task.hasCountTracking ? "Yes" : "No"}</strong>
+                </div>
+                {detail.task.hasCountTracking ? (
+                  <div>
+                    <span>Benchmark / Count</span>
+                    <strong>{detail.task.benchmarkMinutesPerCount ?? 0} mins</strong>
+                  </div>
+                ) : null}
+                {detail.task.hasCountTracking ? (
+                  <div>
+                    <span>Count Number</span>
+                    <strong>{detail.task.countNumber ?? 0}</strong>
+                  </div>
+                ) : null}
                 <div>
                   <span>Created On</span>
                   <strong>{toLocalDate(detail.task.createdAt, taskTimeZone)}</strong>
@@ -460,6 +514,12 @@ export const TaskDetailDrawer = ({
                     </strong>
                   </div>
                 </div>
+                {detail.task.hasCountTracking ? (
+                  <div className="task-drawer__progress-metric task-drawer__progress-metric--left">
+                    <span>Total Count Completed</span>
+                    <strong>{detail.task.totalCountCompleted}</strong>
+                  </div>
+                ) : null}
                 <div className="task-drawer__progress-track">
                   <div className="task-drawer__progress-fill" style={{ width: `${completionPercent}%` }} />
                 </div>
@@ -478,10 +538,34 @@ export const TaskDetailDrawer = ({
                           </LoadingButton>
                         ) : (
                           <>
-                            <LoadingButton className="timesheet-secondary-button" loading={loadingAction === "timer-pause"} onClick={() => void handleTimerAction("pause")} type="button">
+                            <LoadingButton
+                              className="timesheet-secondary-button"
+                              loading={loadingAction === "timer-pause"}
+                              onClick={() => {
+                                if (detail.task.hasCountTracking) {
+                                  setPendingTimerAction("pause");
+                                  setCountInput("");
+                                  return;
+                                }
+                                void handleTimerAction("pause");
+                              }}
+                              type="button"
+                            >
                               Pause
                             </LoadingButton>
-                            <LoadingButton className="timesheet-primary-button" loading={loadingAction === "timer-stop"} onClick={() => void handleTimerAction("stop")} type="button">
+                            <LoadingButton
+                              className="timesheet-primary-button"
+                              loading={loadingAction === "timer-stop"}
+                              onClick={() => {
+                                if (detail.task.hasCountTracking) {
+                                  setPendingTimerAction("stop");
+                                  setCountInput("");
+                                  return;
+                                }
+                                void handleTimerAction("stop");
+                              }}
+                              type="button"
+                            >
                               Stop
                             </LoadingButton>
                           </>
@@ -505,7 +589,7 @@ export const TaskDetailDrawer = ({
               <section className="task-drawer__comments">
                 <span>Comments</span>
                 <div className="task-drawer__comment-list">
-                  {detail.comments.map((comment) => {
+                    {detail.comments.map((comment) => {
                     const author = authorMap.get(comment.authorId);
                     const isCurrentUser = author?.id === user?.id;
                     const isEditing = editingCommentId === comment.id;
@@ -719,6 +803,48 @@ export const TaskDetailDrawer = ({
             >
               Done
             </button>
+          </div>
+        </div>
+      ) : null}
+      {pendingTimerAction && task ? (
+        <div className="task-modal-overlay" onClick={() => setPendingTimerAction(null)} role="presentation">
+          <div className="task-modal task-modal--compact" onClick={(event) => event.stopPropagation()}>
+            <button
+              className="task-modal__close task-modal__close--floating"
+              onClick={() => setPendingTimerAction(null)}
+              type="button"
+            >
+              ×
+            </button>
+            <h3 className="task-modal__success-title">Enter Count</h3>
+            <p className="task-modal__success-copy">
+              Add the completed count for this session before you {pendingTimerAction === "pause" ? "pause" : "stop"} the timer.
+            </p>
+            <p className="task-modal__success-copy">
+              Remaining count: {remainingCount} out of {task.countNumber ?? 0}
+            </p>
+            <input
+              className="task-modal__input"
+              min="0"
+              max={remainingCount}
+              step="1"
+              type="number"
+              value={countInput}
+              onChange={(event) => setCountInput(event.target.value)}
+            />
+            <div className="task-modal__actions">
+              <button className="timesheet-secondary-button" onClick={() => setPendingTimerAction(null)} type="button">
+                Cancel
+              </button>
+              <LoadingButton
+                className="timesheet-primary-button"
+                loading={loadingAction === `timer-${pendingTimerAction}`}
+                onClick={() => void handleCountActionConfirm()}
+                type="button"
+              >
+                Confirm
+              </LoadingButton>
+            </div>
           </div>
         </div>
       ) : null}
