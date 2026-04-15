@@ -446,7 +446,20 @@ export const ManagerTasksPage = () => {
                     <td className="employee-task-table__strong">{task.title}</td>
                     <td>{projectNameMap.get(task.projectId) ?? task.projectId}</td>
                     <td>{activityNameMap.get(task.activityId) ?? task.activityId}</td>
-                    <td>{assignees.map((assignee) => assignee!.fullName).join(", ") || task.assigneeId}</td>
+                    <td>
+                      <div className="timesheet-assignee-cell">
+                        {(task.teamNames ?? []).map((name) => (
+                          <span key={name} className="timesheet-team-pill">
+                            {name}
+                          </span>
+                        ))}
+                        {(task.assigneeNames ?? []).map((name) => (
+                          <span key={name} className="timesheet-user-name">
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
                     <td>
                       <span className={statusToneMap[task.status]}>{statusLabelMap[task.status]}</span>
                     </td>
@@ -491,8 +504,12 @@ export const ManagerTasksPage = () => {
                                   <span>Assignment</span>
                                   <strong>
                                     {detail.assignedTeams.length > 0
-                                      ? `Team: ${detail.assignedTeams.map((team) => team.name).join(", ")}`
-                                      : "Direct Employee Assignment"}
+                                      ? `Team: ${detail.assignedTeams
+                                          .map((team) => team.name)
+                                          .join(", ")}`
+                                      : detail.assignees
+                                          .map((a) => a.fullName)
+                                          .join(", ")}
                                   </strong>
                                 </div>
                                 <div>

@@ -902,6 +902,7 @@ export const EmployeeTimesheetPage = () => {
               <tr>
                 <th>Project</th>
                 <th>Activity</th>
+                <th>Assigned To</th>
                 <th>Task</th>
                 <th>Logged Time</th>
                 <th>Status</th>
@@ -936,6 +937,20 @@ export const EmployeeTimesheetPage = () => {
                         {getProjectName(task.projectId)}
                       </td>
                       <td>{getActivityName(task.activityId)}</td>
+                      <td>
+                        <div className="timesheet-assignee-cell">
+                          {(task.teamNames ?? []).map((name) => (
+                            <span key={name} className="timesheet-team-pill">
+                              {name}
+                            </span>
+                          ))}
+                          {(task.assigneeNames ?? []).map((name) => (
+                            <span key={name} className="timesheet-user-name">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
                       <td>{task.title}</td>
                       <td>{formatDuration(totalSeconds)}</td>
                       <td>
@@ -1025,8 +1040,12 @@ export const EmployeeTimesheetPage = () => {
                                     <span>Assignment</span>
                                     <strong>
                                       {detail.assignedTeams.length > 0
-                                        ? `Team: ${detail.assignedTeams.map((team) => team.name).join(", ")}`
-                                        : "Direct Employee Assignment"}
+                                        ? `Team: ${detail.assignedTeams
+                                            .map((team) => team.name)
+                                            .join(", ")}`
+                                        : detail.assignees
+                                            .map((a) => a.fullName)
+                                            .join(", ")}
                                     </strong>
                                   </div>
                                   <div>

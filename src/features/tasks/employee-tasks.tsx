@@ -392,6 +392,7 @@ export const EmployeeTasksPage = () => {
                 <th>Task Name</th>
                 <th>Project</th>
                 <th>Activity</th>
+                <th>Assigned To</th>
                 <th>Priority</th>
                 <th>Status</th>
                 <th>Assign By</th>
@@ -436,6 +437,20 @@ export const EmployeeTasksPage = () => {
                       </td>
                       <td>
                         {activityNameMap.get(task.activityId) ?? task.activityId}
+                      </td>
+                      <td>
+                        <div className="timesheet-assignee-cell">
+                          {(task.teamNames ?? []).map((name) => (
+                            <span key={name} className="timesheet-team-pill">
+                              {name}
+                            </span>
+                          ))}
+                          {(task.assigneeNames ?? []).map((name) => (
+                            <span key={name} className="timesheet-user-name">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td>{priorityLabelMap[task.priority]}</td>
                       <td>
@@ -489,8 +504,12 @@ export const EmployeeTasksPage = () => {
                                     <span>Assignment</span>
                                     <strong>
                                       {detail.assignedTeams.length > 0
-                                        ? `Team: ${detail.assignedTeams.map((team) => team.name).join(", ")}`
-                                        : "Direct Employee Assignment"}
+                                        ? `Team: ${detail.assignedTeams
+                                            .map((team) => team.name)
+                                            .join(", ")}`
+                                        : detail.assignees
+                                            .map((a) => a.fullName)
+                                            .join(", ")}
                                     </strong>
                                   </div>
                                   <div>
@@ -640,6 +659,18 @@ export const EmployeeTasksPage = () => {
                         {activityNameMap.get(task.activityId) ??
                           task.activityId}
                       </p>
+                      <div className="timesheet-assignee-cell" style={{ marginTop: "8px", marginBottom: "8px" }}>
+                        {(task.teamNames ?? []).map((name) => (
+                          <span key={name} className="timesheet-team-pill">
+                            {name}
+                          </span>
+                        ))}
+                        {(task.assigneeNames ?? []).map((name) => (
+                          <span key={name} className="timesheet-user-name">
+                            {name}
+                          </span>
+                        ))}
+                      </div>
                       <div className="employee-kanban-card__meta">
                         <span>{priorityLabelMap[task.priority]}</span>
                         <span>

@@ -2429,3 +2429,33 @@ select {
     width: 100%;
   }
 }
+
+.timesheet-team-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid #1a73e8;
+  color: #1a73e8;
+  background: rgba(26, 115, 232, 0.05);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.timesheet-assignee-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.timesheet-user-name {
+  font-size: 0.85rem;
+  color: #444;
+  font-weight: 500;
+}
+
+.timesheet-user-name:not(:last-child)::after {
+  content: ",";
+}

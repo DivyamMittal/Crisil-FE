@@ -55,7 +55,9 @@ export interface Task extends BaseEntity {
   description: string;
   assigneeId: EntityId;
   assigneeIds: EntityId[];
+  assigneeNames?: string[];
   assignedTeamIds?: EntityId[];
+  teamNames?: string[];
   assignedTeams?: Team[];
   createdByManagerId: EntityId;
   priority: Priority;
