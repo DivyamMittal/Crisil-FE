@@ -93,7 +93,7 @@ export const EmployeeTimesheetPage = () => {
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [pendingTimerAction, setPendingTimerAction] = useState<
-    "pause" | "stop" | null
+    "pause" | "stop" | "switch" | null
   >(null);
   const [countInput, setCountInput] = useState("");
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
@@ -180,6 +180,15 @@ export const EmployeeTimesheetPage = () => {
   );
 
   const currentActionTask = selectedTask ?? runningTask ?? null;
+
+  const countContextTask =
+    pendingTimerAction === "switch" ? runningTask : currentActionTask;
+  const countContextRemaining = Math.max(
+    0,
+    (countContextTask?.countNumber ?? 0) -
+      (countContextTask?.totalCountCompleted ?? 0),
+  );
+
   const remainingCount = Math.max(
     0,
     (currentActionTask?.countNumber ?? 0) -
@@ -450,7 +459,7 @@ export const EmployeeTimesheetPage = () => {
   };
 
   const handleCountActionConfirm = async () => {
-    if (!pendingTimerAction || !currentActionTask) {
+    if (!pendingTimerAction || !countContextTask) {
       return;
     }
 
@@ -464,18 +473,43 @@ export const EmployeeTimesheetPage = () => {
       return;
     }
 
-    if (parsedCount > remainingCount) {
+    if (parsedCount > countContextRemaining) {
       showErrorToast(
-        `Completed count cannot exceed remaining count (${remainingCount})`,
+        `Completed count cannot exceed remaining count (${countContextRemaining})`,
       );
       return;
     }
 
-    await handleTimerTransition(
-      pendingTimerAction,
-      currentActionTask.id,
-      parsedCount,
-    );
+    if (pendingTimerAction === "switch") {
+      setLoadingAction("switch-task");
+      try {
+        await api(`/tasks/${countContextTask.id}/timer-transition`, {
+          method: "POST",
+          body: JSON.stringify({
+            timerState: TimerState.STOPPED,
+            countCompleted: parsedCount,
+          }),
+          suppressGlobalLoader: true,
+        });
+
+        await api(`/tasks/${currentActionTask!.id}/start-timer`, {
+          method: "POST",
+          suppressGlobalLoader: true,
+        });
+
+        showSuccessToast("Switched active task");
+        await load();
+      } finally {
+        setLoadingAction(null);
+      }
+    } else {
+      await handleTimerTransition(
+        pendingTimerAction,
+        countContextTask.id,
+        parsedCount,
+      );
+    }
+
     setPendingTimerAction(null);
     setCountInput("");
   };
@@ -659,6 +693,12 @@ export const EmployeeTimesheetPage = () => {
                   className="timesheet-primary-button"
                   loading={loadingAction === "switch-task"}
                   onClick={async () => {
+                    if (runningTask?.hasCountTracking) {
+                      setPendingTimerAction("switch");
+                      setCountInput("");
+                      return;
+                    }
+
                     setLoadingAction("switch-task");
                     setSelectedTaskId(currentActionTask.id);
                     try {
@@ -1184,7 +1224,7 @@ export const EmployeeTimesheetPage = () => {
           })}
         </div>
       </section>
-      {pendingTimerAction && currentActionTask ? (
+      {pendingTimerAction && countContextTask ? (
         <div
           className="task-modal-overlay"
           onClick={() => setPendingTimerAction(null)}
@@ -1203,17 +1243,23 @@ export const EmployeeTimesheetPage = () => {
             </button>
             <h3 className="task-modal__success-title">Enter Count</h3>
             <p className="task-modal__success-copy">
-              Add the completed count for this session before you{" "}
-              {pendingTimerAction === "pause" ? "pause" : "stop"} the timer.
+              Add the completed count for{" "}
+              <strong>{countContextTask.title}</strong> before you{" "}
+              {pendingTimerAction === "pause"
+                ? "pause"
+                : pendingTimerAction === "switch"
+                  ? "switch"
+                  : "stop"}{" "}
+              the timer.
             </p>
             <p className="task-modal__success-copy">
-              Remaining count: {remainingCount} out of{" "}
-              {currentActionTask.countNumber ?? 0}
+              Remaining count: {countContextRemaining} out of{" "}
+              {countContextTask.countNumber ?? 0}
             </p>
             <input
               className="task-modal__input"
               min="0"
-              max={remainingCount}
+              max={countContextRemaining}
               step="1"
               type="number"
               value={countInput}
