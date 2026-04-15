@@ -109,17 +109,23 @@ export const EmployeeTasksPage = () => {
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
   const [selectedPriority, setSelectedPriority] = useState("");
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const [expandedTaskDetails, setExpandedTaskDetails] = useState<Record<string, TaskDetailResponse>>({});
-  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<string | null>(null);
+  const [expandedTaskDetails, setExpandedTaskDetails] = useState<
+    Record<string, TaskDetailResponse>
+  >({});
+  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<
+    string | null
+  >(null);
 
   const debouncedSearch = useDebounce(searchInput.trim(), 400);
 
@@ -128,18 +134,37 @@ export const EmployeeTasksPage = () => {
       api<Task[]>("/tasks"),
       api<Project[]>("/projects"),
       api<Activity[]>("/activities"),
+      api<Team[]>("/teams"),
       api<TimeEntry[]>("/time-tracking/entries"),
-    ]).then(([tasksData, projectsData, activitiesData, entriesData]) => {
-      setAllTasks(tasksData);
-      setProjects(projectsData);
-      setActivities(activitiesData);
-      setEntries(entriesData);
-    });
+    ]).then(
+      ([tasksData, projectsData, activitiesData, teamsData, entriesData]) => {
+        setAllTasks(tasksData);
+        setProjects(projectsData);
+        setActivities(activitiesData);
+        setTeams(teamsData);
+        setEntries(entriesData);
+      },
+    );
   }, []);
 
   useEffect(() => {
+    const query = buildQuery({
+      search: debouncedSearch || undefined,
+      projectId: selectedProjectId || undefined,
+      teamId: selectedTeamId || undefined,
+    });
+    void api<Task[]>(`/tasks?${query}`).then(setAllTasks);
+  }, [debouncedSearch, selectedProjectId, selectedTeamId]);
+
+  useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, selectedProjectId, selectedStatus, selectedPriority]);
+  }, [
+    debouncedSearch,
+    selectedProjectId,
+    selectedTeamId,
+    selectedStatus,
+    selectedPriority,
+  ]);
 
   useEffect(() => {
     const query = buildQuery({
@@ -148,6 +173,7 @@ export const EmployeeTasksPage = () => {
       pageSize: PAGE_SIZE,
       search: debouncedSearch || undefined,
       projectId: selectedProjectId || undefined,
+      teamId: selectedTeamId || undefined,
       status: selectedStatus || undefined,
       priority: selectedPriority || undefined,
     });
@@ -158,6 +184,7 @@ export const EmployeeTasksPage = () => {
     page,
     selectedPriority,
     selectedProjectId,
+    selectedTeamId,
     selectedStatus,
   ]);
 
@@ -251,12 +278,17 @@ export const EmployeeTasksPage = () => {
   };
 
   const getAssigneeStatus = (task: Task, assigneeEntries: TimeEntry[]) => {
-    if (assigneeEntries.some((entry) => entry.timerState === TimerState.RUNNING)) {
+    if (
+      assigneeEntries.some((entry) => entry.timerState === TimerState.RUNNING)
+    ) {
       return { label: "WIP", className: statusToneMap[TaskStatus.WIP] };
     }
 
     if (assigneeEntries.length === 0) {
-      return { label: "Not Started", className: "employee-task-pill employee-task-pill--neutral" };
+      return {
+        label: "Not Started",
+        className: "employee-task-pill employee-task-pill--neutral",
+      };
     }
 
     const latestEntry = [...assigneeEntries].sort(
@@ -266,14 +298,20 @@ export const EmployeeTasksPage = () => {
     )[0];
 
     if (task.status === TaskStatus.COMPLETED) {
-      return { label: "Completed", className: statusToneMap[TaskStatus.COMPLETED] };
+      return {
+        label: "Completed",
+        className: statusToneMap[TaskStatus.COMPLETED],
+      };
     }
 
     if (latestEntry?.timerState === TimerState.PAUSED) {
       return { label: "On Hold", className: statusToneMap[TaskStatus.ON_HOLD] };
     }
 
-    return { label: "Stopped", className: "employee-task-pill employee-task-pill--pending" };
+    return {
+      label: "Stopped",
+      className: "employee-task-pill employee-task-pill--pending",
+    };
   };
 
   return (
@@ -296,6 +334,7 @@ export const EmployeeTasksPage = () => {
             pageSize: PAGE_SIZE,
             search: debouncedSearch || undefined,
             projectId: selectedProjectId || undefined,
+            teamId: selectedTeamId || undefined,
             status: selectedStatus || undefined,
             priority: selectedPriority || undefined,
           });
@@ -326,6 +365,17 @@ export const EmployeeTasksPage = () => {
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedTeamId}
+            onChange={(event) => setSelectedTeamId(event.target.value)}
+          >
+            <option value="">All Teams (My Tasks)</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
               </option>
             ))}
           </select>
@@ -436,7 +486,8 @@ export const EmployeeTasksPage = () => {
                         {projectNameMap.get(task.projectId) ?? task.projectId}
                       </td>
                       <td>
-                        {activityNameMap.get(task.activityId) ?? task.activityId}
+                        {activityNameMap.get(task.activityId) ??
+                          task.activityId}
                       </td>
                       <td>
                         <div className="timesheet-assignee-cell">
@@ -496,7 +547,9 @@ export const EmployeeTasksPage = () => {
                         <td colSpan={13}>
                           <div className="manager-task-expand-card">
                             {expandedLoadingTaskId === task.id && !detail ? (
-                              <p className="manager-dashboard-inactive">Loading task details...</p>
+                              <p className="manager-dashboard-inactive">
+                                Loading task details...
+                              </p>
                             ) : detail ? (
                               <>
                                 <div className="manager-task-expand-meta">
@@ -530,7 +583,9 @@ export const EmployeeTasksPage = () => {
                                   </div>
                                   <div>
                                     <span>Assigned By</span>
-                                    <strong>{detail.createdBy?.fullName ?? "N/A"}</strong>
+                                    <strong>
+                                      {detail.createdBy?.fullName ?? "N/A"}
+                                    </strong>
                                   </div>
                                 </div>
                                 <div className="manager-task-expand-description">
@@ -540,41 +595,85 @@ export const EmployeeTasksPage = () => {
                                 <div className="manager-task-assignee-block">
                                   <div className="manager-task-assignee-block__header">
                                     <h4>Employee Status</h4>
-                                    <p>Task progress details for each assigned employee</p>
+                                    <p>
+                                      Task progress details for each assigned
+                                      employee
+                                    </p>
                                   </div>
                                   <div className="manager-task-assignee-grid">
                                     {detail.assignees.map((assignee) => {
-                                      const assigneeEntries = detail.entries.filter((entry) => entry.employeeId === assignee.id);
-                                      const totalLoggedSeconds = assigneeEntries.reduce(
-                                        (sum, entry) => sum + (entry.durationSeconds ?? entry.durationMinutes * 60),
-                                        0,
-                                      );
-                                      const totalCountCompleted = assigneeEntries.reduce(
-                                        (sum, entry) => sum + (entry.countCompleted ?? 0),
-                                        0,
-                                      );
-                                      const firstStartedAt = assigneeEntries.map((entry) => entry.startTimeUtc).sort()[0];
+                                      const assigneeEntries =
+                                        detail.entries.filter(
+                                          (entry) =>
+                                            entry.employeeId === assignee.id,
+                                        );
+                                      const totalLoggedSeconds =
+                                        assigneeEntries.reduce(
+                                          (sum, entry) =>
+                                            sum +
+                                            (entry.durationSeconds ??
+                                              entry.durationMinutes * 60),
+                                          0,
+                                        );
+                                      const totalCountCompleted =
+                                        assigneeEntries.reduce(
+                                          (sum, entry) =>
+                                            sum + (entry.countCompleted ?? 0),
+                                          0,
+                                        );
+                                      const firstStartedAt = assigneeEntries
+                                        .map((entry) => entry.startTimeUtc)
+                                        .sort()[0];
                                       const lastEndedAt = assigneeEntries
-                                        .map((entry) => entry.endTimeUtc ?? entry.startTimeUtc)
+                                        .map(
+                                          (entry) =>
+                                            entry.endTimeUtc ??
+                                            entry.startTimeUtc,
+                                        )
                                         .sort()
                                         .at(-1);
-                                      const assigneeStatus = getAssigneeStatus(detail.task, assigneeEntries);
-                                      const firstStarted = toLocalDateAndTimeParts(firstStartedAt, assignee.timezone);
-                                      const lastEnded = toLocalDateAndTimeParts(lastEndedAt, assignee.timezone);
+                                      const assigneeStatus = getAssigneeStatus(
+                                        detail.task,
+                                        assigneeEntries,
+                                      );
+                                      const firstStarted =
+                                        toLocalDateAndTimeParts(
+                                          firstStartedAt,
+                                          assignee.timezone,
+                                        );
+                                      const lastEnded = toLocalDateAndTimeParts(
+                                        lastEndedAt,
+                                        assignee.timezone,
+                                      );
 
                                       return (
-                                        <article key={assignee.id} className="manager-task-assignee-card">
+                                        <article
+                                          key={assignee.id}
+                                          className="manager-task-assignee-card"
+                                        >
                                           <div className="manager-task-assignee-card__top">
                                             <div>
-                                              <strong>{assignee.fullName}</strong>
+                                              <strong>
+                                                {assignee.fullName}
+                                              </strong>
                                               <span>{assignee.email}</span>
                                             </div>
-                                            <span className={assigneeStatus.className}>{assigneeStatus.label}</span>
+                                            <span
+                                              className={
+                                                assigneeStatus.className
+                                              }
+                                            >
+                                              {assigneeStatus.label}
+                                            </span>
                                           </div>
                                           <div className="manager-task-assignee-card__metrics">
                                             <div>
                                               <span>Logged</span>
-                                              <strong>{formatDurationCompact(totalLoggedSeconds)}</strong>
+                                              <strong>
+                                                {formatDurationCompact(
+                                                  totalLoggedSeconds,
+                                                )}
+                                              </strong>
                                             </div>
                                             <div>
                                               <span>Start Time</span>
@@ -593,12 +692,16 @@ export const EmployeeTasksPage = () => {
                                             {detail.task.hasCountTracking ? (
                                               <div>
                                                 <span>Count Completed</span>
-                                                <strong>{totalCountCompleted}</strong>
+                                                <strong>
+                                                  {totalCountCompleted}
+                                                </strong>
                                               </div>
                                             ) : null}
                                             <div>
                                               <span>Sessions</span>
-                                              <strong>{assigneeEntries.length}</strong>
+                                              <strong>
+                                                {assigneeEntries.length}
+                                              </strong>
                                             </div>
                                           </div>
                                         </article>
@@ -608,7 +711,9 @@ export const EmployeeTasksPage = () => {
                                 </div>
                               </>
                             ) : (
-                              <p className="manager-dashboard-inactive">Task details could not be loaded.</p>
+                              <p className="manager-dashboard-inactive">
+                                Task details could not be loaded.
+                              </p>
                             )}
                           </div>
                         </td>
@@ -659,7 +764,10 @@ export const EmployeeTasksPage = () => {
                         {activityNameMap.get(task.activityId) ??
                           task.activityId}
                       </p>
-                      <div className="timesheet-assignee-cell" style={{ marginTop: "8px", marginBottom: "8px" }}>
+                      <div
+                        className="timesheet-assignee-cell"
+                        style={{ marginTop: "8px", marginBottom: "8px" }}
+                      >
                         {(task.teamNames ?? []).map((name) => (
                           <span key={name} className="timesheet-team-pill">
                             {name}
