@@ -1928,6 +1928,25 @@ select {
   border-right: 1px solid #dfdfdf;
   display: grid;
   gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.employee-tasks-summary__card:hover {
+  background: #ebebeb;
+}
+
+.employee-tasks-summary__card.is-active {
+  background: #111;
+  border-right-color: #111;
+}
+
+.employee-tasks-summary__card.is-active span {
+  color: #bbb;
+}
+
+.employee-tasks-summary__card.is-active strong {
+  color: #fff;
 }
 
 .employee-tasks-summary__card:last-child {

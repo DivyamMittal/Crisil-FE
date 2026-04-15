@@ -182,25 +182,29 @@ export const EmployeeTasksPage = () => {
 
   const summaryCards = useMemo(
     () => [
-      { label: "Total Tasks", value: allTasks.length },
+      { label: "Total Tasks", value: allTasks.length, status: "" },
       {
         label: "WIP",
         value: allTasks.filter((task) => task.status === TaskStatus.WIP).length,
+        status: TaskStatus.WIP,
       },
       {
         label: "On Hold",
         value: allTasks.filter((task) => task.status === TaskStatus.ON_HOLD)
           .length,
+        status: TaskStatus.ON_HOLD,
       },
       {
         label: "Completed",
         value: allTasks.filter((task) => task.status === TaskStatus.COMPLETED)
           .length,
+        status: TaskStatus.COMPLETED,
       },
       {
         label: "Not Started",
         value: allTasks.filter((task) => task.status === TaskStatus.PENDING)
           .length,
+        status: TaskStatus.PENDING,
       },
     ],
     [allTasks],
@@ -368,7 +372,11 @@ export const EmployeeTasksPage = () => {
 
       <section className="employee-tasks-summary">
         {summaryCards.map((card) => (
-          <article key={card.label} className="employee-tasks-summary__card">
+          <article
+            key={card.label}
+            className={`employee-tasks-summary__card ${selectedStatus === card.status ? "is-active" : ""}`}
+            onClick={() => setSelectedStatus(card.status)}
+          >
             <span>{card.label}</span>
             <strong>{String(card.value).padStart(2, "0")}</strong>
           </article>

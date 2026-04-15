@@ -241,12 +241,25 @@ export const ManagerTasksPage = () => {
 
   const summaryCards = useMemo(
     () => [
-      { label: "Total Tasks", value: filteredTasks.length },
-      { label: "Completed", value: filteredTasks.filter((task) => task.status === TaskStatus.COMPLETED).length },
-      { label: "WIP", value: filteredTasks.filter((task) => task.status === TaskStatus.WIP).length },
-      { label: "On Hold", value: filteredTasks.filter((task) => task.status === TaskStatus.ON_HOLD).length },
+      { label: "Total Tasks", value: filteredTasks.length, status: "" },
+      {
+        label: "Completed",
+        value: tasks.filter((task) => task.status === TaskStatus.COMPLETED)
+          .length,
+        status: TaskStatus.COMPLETED,
+      },
+      {
+        label: "WIP",
+        value: tasks.filter((task) => task.status === TaskStatus.WIP).length,
+        status: TaskStatus.WIP,
+      },
+      {
+        label: "On Hold",
+        value: tasks.filter((task) => task.status === TaskStatus.ON_HOLD).length,
+        status: TaskStatus.ON_HOLD,
+      },
     ],
-    [filteredTasks],
+    [filteredTasks.length, tasks],
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
@@ -384,7 +397,11 @@ export const ManagerTasksPage = () => {
 
       <section className="employee-tasks-summary employee-tasks-summary--four">
         {summaryCards.map((card) => (
-          <article key={card.label} className="employee-tasks-summary__card">
+          <article
+            key={card.label}
+            className={`employee-tasks-summary__card ${selectedStatus === card.status ? "is-active" : ""}`}
+            onClick={() => setSelectedStatus(card.status)}
+          >
             <span>{card.label}</span>
             <strong>{String(card.value).padStart(2, "0")}</strong>
           </article>
