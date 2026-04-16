@@ -106,8 +106,9 @@ export const EmployeeTimesheetPage = () => {
   >(null);
   const [manualLog, setManualLog] = useState({
     taskId: "",
-    startTimeUtc: "",
-    endTimeUtc: "",
+    hours: 0,
+    minutes: 0,
+    countCompleted: 0,
     description: "",
     reason: "",
   });
@@ -788,22 +789,28 @@ export const EmployeeTimesheetPage = () => {
               event.preventDefault();
               setLoadingAction("manual-log");
               try {
+                const totalMinutes =
+                  Number(manualLog.hours) * 60 + Number(manualLog.minutes);
                 await api(`/tasks/${manualLog.taskId}/manual-log`, {
                   method: "POST",
                   body: JSON.stringify({
-                    ...manualLog,
-                    startTimeUtc: new Date(
-                      manualLog.startTimeUtc,
-                    ).toISOString(),
-                    endTimeUtc: new Date(manualLog.endTimeUtc).toISOString(),
+                    durationMinutes: totalMinutes,
+                    countCompleted:
+                      tasks.find((t) => t.id === manualLog.taskId)
+                        ?.hasCountTracking && manualLog.countCompleted > 0
+                        ? Number(manualLog.countCompleted)
+                        : undefined,
+                    description: manualLog.description,
+                    reason: manualLog.reason,
                   }),
                   suppressGlobalLoader: true,
                 });
                 showSuccessToast("Manual log request submitted");
                 setManualLog({
                   taskId: currentActionTask?.id ?? "",
-                  startTimeUtc: "",
-                  endTimeUtc: "",
+                  hours: 0,
+                  minutes: 0,
+                  countCompleted: 0,
                   description: "",
                   reason: "",
                 });
@@ -814,67 +821,110 @@ export const EmployeeTimesheetPage = () => {
               }
             }}
           >
-            <select
-              className="input"
-              value={manualLog.taskId}
-              onChange={(event) =>
-                setManualLog((current) => ({
-                  ...current,
-                  taskId: event.target.value,
-                }))
-              }
-            >
-              <option value="">Select task</option>
-              {tasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.title}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input"
-              type="datetime-local"
-              value={manualLog.startTimeUtc}
-              onChange={(event) =>
-                setManualLog((current) => ({
-                  ...current,
-                  startTimeUtc: event.target.value,
-                }))
-              }
-            />
-            <input
-              className="input"
-              type="datetime-local"
-              value={manualLog.endTimeUtc}
-              onChange={(event) =>
-                setManualLog((current) => ({
-                  ...current,
-                  endTimeUtc: event.target.value,
-                }))
-              }
-            />
-            <input
-              className="input"
-              placeholder="Description"
-              value={manualLog.description}
-              onChange={(event) =>
-                setManualLog((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-            />
-            <input
-              className="input"
-              placeholder="Reason for approval"
-              value={manualLog.reason}
-              onChange={(event) =>
-                setManualLog((current) => ({
-                  ...current,
-                  reason: event.target.value,
-                }))
-              }
-            />
+            <div className="timesheet-manual-grid">
+              <div className="timesheet-manual-input-group">
+                <label>Task</label>
+                <select
+                  className="input"
+                  value={manualLog.taskId}
+                  onChange={(event) =>
+                    setManualLog((current) => ({
+                      ...current,
+                      taskId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select task</option>
+                  {tasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="timesheet-manual-input-group">
+                <label>Hours</label>
+                <input
+                  className="input"
+                  min="0"
+                  type="number"
+                  value={manualLog.hours}
+                  onChange={(event) =>
+                    setManualLog((current) => ({
+                      ...current,
+                      hours: Number(event.target.value),
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="timesheet-manual-input-group">
+                <label>Minutes</label>
+                <input
+                  className="input"
+                  max="59"
+                  min="0"
+                  type="number"
+                  value={manualLog.minutes}
+                  onChange={(event) =>
+                    setManualLog((current) => ({
+                      ...current,
+                      minutes: Number(event.target.value),
+                    }))
+                  }
+                />
+              </div>
+
+              {tasks.find((t) => t.id === manualLog.taskId)
+                ?.hasCountTracking ? (
+                <div className="timesheet-manual-input-group">
+                  <label>Count Completed</label>
+                  <input
+                    className="input"
+                    min="1"
+                    type="number"
+                    value={manualLog.countCompleted}
+                    onChange={(event) =>
+                      setManualLog((current) => ({
+                        ...current,
+                        countCompleted: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+              ) : null}
+
+              <div className="timesheet-manual-input-group">
+                <label>Description</label>
+                <input
+                  className="input"
+                  placeholder="What did you work on?"
+                  value={manualLog.description}
+                  onChange={(event) =>
+                    setManualLog((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="timesheet-manual-input-group">
+                <label>Reason</label>
+                <input
+                  className="input"
+                  placeholder="Why is this log manual?"
+                  value={manualLog.reason}
+                  onChange={(event) =>
+                    setManualLog((current) => ({
+                      ...current,
+                      reason: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
             <LoadingButton
               className="timesheet-primary-button"
               loading={loadingAction === "manual-log"}
