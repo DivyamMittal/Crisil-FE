@@ -16,8 +16,6 @@ import {
   type User,
 } from "@/shared";
 
-const PAGE_SIZE = 8;
-
 const statusLabelMap: Record<TaskStatus, string> = {
   [TaskStatus.PENDING]: "Pending",
   [TaskStatus.WIP]: "WIP",
@@ -31,7 +29,8 @@ const statusToneMap: Record<TaskStatus, string> = {
   [TaskStatus.PENDING]: "employee-task-pill employee-task-pill--neutral",
   [TaskStatus.WIP]: "employee-task-pill employee-task-pill--wip",
   [TaskStatus.ON_HOLD]: "employee-task-pill employee-task-pill--hold",
-  [TaskStatus.APPROVAL_PENDING]: "employee-task-pill employee-task-pill--pending",
+  [TaskStatus.APPROVAL_PENDING]:
+    "employee-task-pill employee-task-pill--pending",
   [TaskStatus.REJECTED]: "employee-task-pill employee-task-pill--rejected",
   [TaskStatus.COMPLETED]: "employee-task-pill employee-task-pill--completed",
 };
@@ -56,10 +55,14 @@ const formatDurationCompact = (seconds: number) => {
   const remainingSeconds = safeSeconds % 60;
 
   if (remainingSeconds > 0) {
-    return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, "0")).join(":");
+    return [hours, minutes, remainingSeconds]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
   }
 
-  return [hours, minutes].map((value) => String(value).padStart(2, "0")).join(":");
+  return [hours, minutes]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
 };
 
 const getPeriodRange = (period: Period, offset: number) => {
@@ -118,7 +121,11 @@ const formatPeriodLabel = (period: Period, start: Date, end: Date) => {
   }).format(start);
 };
 
-const isDateInRange = (value: string | null | undefined, start: Date, end: Date) => {
+const isDateInRange = (
+  value: string | null | undefined,
+  start: Date,
+  end: Date,
+) => {
   if (!value) {
     return false;
   }
@@ -148,18 +155,29 @@ export const ManagerTasksPage = () => {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedActivityId, setSelectedActivityId] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
-  const [period, setPeriod] = useState<Period>("week");
+  const [period, setPeriod] = useState<Period | "custom">("week");
   const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState(1);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const [expandedTaskDetails, setExpandedTaskDetails] = useState<Record<string, TaskDetailResponse>>({});
-  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<string | null>(null);
+  const [expandedTaskDetails, setExpandedTaskDetails] = useState<
+    Record<string, TaskDetailResponse>
+  >({});
+  const [expandedLoadingTaskId, setExpandedLoadingTaskId] = useState<
+    string | null
+  >(null);
 
   const debouncedSearch = useDebounce(searchInput.trim(), 400);
 
   const load = async () => {
-    const [tasksData, projectsData, activitiesData, employeesData, entriesData] = await Promise.all([
+    const [
+      tasksData,
+      projectsData,
+      activitiesData,
+      employeesData,
+      entriesData,
+    ] = await Promise.all([
       api<Task[]>("/tasks"),
       api<Project[]>("/projects"),
       api<Activity[]>("/activities"),
@@ -179,8 +197,17 @@ export const ManagerTasksPage = () => {
   }, []);
 
   useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, selectedProjectId, selectedActivityId, selectedStatus, period, offset]);
+    // No longer resetting page as pagination is removed
+  }, [
+    debouncedSearch,
+    selectedProjectId,
+    selectedActivityId,
+    selectedStatus,
+    period,
+    offset,
+    startDate,
+    endDate,
+  ]);
 
   const projectNameMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -205,19 +232,40 @@ export const ManagerTasksPage = () => {
     return totals;
   }, [entries]);
 
-  const { start, end } = useMemo(() => getPeriodRange(period, offset), [period, offset]);
-  const periodLabel = useMemo(() => formatPeriodLabel(period, start, end), [period, start, end]);
+  const { start, end } = useMemo(() => {
+    if (period === "custom") {
+      return {
+        start: startDate ? new Date(startDate) : new Date(0),
+        end: endDate ? new Date(endDate) : new Date(8640000000000000),
+      };
+    }
+    return getPeriodRange(period, offset);
+  }, [period, offset, startDate, endDate]);
+
+  const periodLabel = useMemo(() => {
+    if (period === "custom") {
+      if (!startDate && !endDate) return "All Time";
+      return `${startDate || "..."} - ${endDate || "..."}`;
+    }
+    return formatPeriodLabel(period, start, end);
+  }, [period, start, end, startDate, endDate]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
       const matchesPeriod = matchesTaskPeriod(task, start, end);
-      const matchesProject = !selectedProjectId || task.projectId === selectedProjectId;
-      const matchesActivity = !selectedActivityId || task.activityId === selectedActivityId;
+      const matchesProject =
+        !selectedProjectId || task.projectId === selectedProjectId;
+      const matchesActivity =
+        !selectedActivityId || task.activityId === selectedActivityId;
       const matchesStatus = !selectedStatus || task.status === selectedStatus;
 
       const searchTerm = debouncedSearch.toLowerCase();
-      const projectName = (projectNameMap.get(task.projectId) ?? "").toLowerCase();
-      const activityName = (activityNameMap.get(task.activityId) ?? "").toLowerCase();
+      const projectName = (
+        projectNameMap.get(task.projectId) ?? ""
+      ).toLowerCase();
+      const activityName = (
+        activityNameMap.get(task.activityId) ?? ""
+      ).toLowerCase();
       const taskTitle = task.title.toLowerCase();
       const matchesSearch =
         searchTerm.length === 0 ||
@@ -225,7 +273,13 @@ export const ManagerTasksPage = () => {
         activityName.includes(searchTerm) ||
         taskTitle.includes(searchTerm);
 
-      return matchesPeriod && matchesProject && matchesActivity && matchesStatus && matchesSearch;
+      return (
+        matchesPeriod &&
+        matchesProject &&
+        matchesActivity &&
+        matchesStatus &&
+        matchesSearch
+      );
     });
   }, [
     activityNameMap,
@@ -255,15 +309,13 @@ export const ManagerTasksPage = () => {
       },
       {
         label: "On Hold",
-        value: tasks.filter((task) => task.status === TaskStatus.ON_HOLD).length,
+        value: tasks.filter((task) => task.status === TaskStatus.ON_HOLD)
+          .length,
         status: TaskStatus.ON_HOLD,
       },
     ],
     [filteredTasks.length, tasks],
   );
-
-  const totalPages = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
-  const pagedTasks = filteredTasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const toggleExpandedTask = async (taskId: string) => {
     if (expandedTaskId === taskId) {
@@ -286,13 +338,100 @@ export const ManagerTasksPage = () => {
     }
   };
 
+  const handleDownloadCSV = () => {
+    const headers = [
+      "S. N",
+      "Task Name",
+      "Project",
+      "Activity",
+      "Assigned To",
+      "Status",
+      "Due Date",
+      "Start Date",
+      "Start Time",
+      "End Date",
+      "End Time",
+      "Est. Hours",
+      "Logged Time",
+      "Count Based",
+      "Count Number",
+      "Count Completed",
+    ];
+
+    const rows = filteredTasks.map((task, index) => {
+      const assigneeIds = task.assigneeIds?.length
+        ? task.assigneeIds
+        : [task.assigneeId];
+      const assignees = assigneeIds
+        .map((id) => employeeMap.get(id))
+        .filter(Boolean);
+      const primaryAssignee = assignees[0];
+
+      const startedAt = toLocalDateAndTimeParts(
+        task.startedAtUtc,
+        primaryAssignee?.timezone,
+      );
+      const completedAt = toLocalDateAndTimeParts(
+        task.completedAtUtc,
+        primaryAssignee?.timezone,
+      );
+
+      const escape = (val: string | number | undefined | null) => {
+        if (val === null || val === undefined) return '""';
+        return `"${String(val).replace(/"/g, '""')}"`;
+      };
+
+      return [
+        index + 1,
+        escape(task.title),
+        escape(projectNameMap.get(task.projectId) ?? task.projectId),
+        escape(activityNameMap.get(task.activityId) ?? task.activityId),
+        escape(
+          (task.assigneeNames ?? []).concat(task.teamNames ?? []).join(", "),
+        ),
+        escape(statusLabelMap[task.status]),
+        escape(toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)),
+        escape(startedAt.date),
+        escape(startedAt.time),
+        escape(completedAt.date),
+        escape(completedAt.time),
+        task.estimatedHours.toFixed(2),
+        escape(formatDurationCompact(loggedSecondsMap.get(task.id) ?? 0)),
+        task.hasCountTracking ? "Yes" : "No",
+        task.countNumber ?? 0,
+        task.totalCountCompleted,
+      ];
+    });
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.join(","))
+      .join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `tasks_export_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const getAssigneeStatus = (task: Task, employeeEntries: TimeEntry[]) => {
-    if (employeeEntries.some((entry) => entry.timerState === TimerState.RUNNING)) {
+    if (
+      employeeEntries.some((entry) => entry.timerState === TimerState.RUNNING)
+    ) {
       return { label: "WIP", className: statusToneMap[TaskStatus.WIP] };
     }
 
     if (employeeEntries.length === 0) {
-      return { label: "Not Started", className: "employee-task-pill employee-task-pill--neutral" };
+      return {
+        label: "Not Started",
+        className: "employee-task-pill employee-task-pill--neutral",
+      };
     }
 
     const latestEntry = [...employeeEntries].sort(
@@ -302,14 +441,20 @@ export const ManagerTasksPage = () => {
     )[0];
 
     if (task.status === TaskStatus.COMPLETED) {
-      return { label: "Completed", className: statusToneMap[TaskStatus.COMPLETED] };
+      return {
+        label: "Completed",
+        className: statusToneMap[TaskStatus.COMPLETED],
+      };
     }
 
     if (latestEntry?.timerState === TimerState.PAUSED) {
       return { label: "On Hold", className: statusToneMap[TaskStatus.ON_HOLD] };
     }
 
-    return { label: "Stopped", className: "employee-task-pill employee-task-pill--pending" };
+    return {
+      label: "Stopped",
+      className: "employee-task-pill employee-task-pill--pending",
+    };
   };
 
   return (
@@ -328,34 +473,53 @@ export const ManagerTasksPage = () => {
         </div>
         <div className="timesheet-header-controls">
           <div className="manager-period-switcher">
-            {(["today", "week", "month"] as const).map((option) => (
+            {(["today", "week", "month", "custom"] as const).map((option) => (
               <button
                 key={option}
                 className={option === period ? "is-active" : ""}
                 onClick={() => {
                   setPeriod(option);
-                  setOffset(0);
+                  if (option !== "custom") {
+                    setOffset(0);
+                  }
                 }}
                 type="button"
               >
-                {option === "today" ? "Today" : option === "week" ? "Weekly" : "Monthly"}
+                {option === "today"
+                  ? "Today"
+                  : option === "week"
+                    ? "Weekly"
+                    : option === "month"
+                      ? "Monthly"
+                      : "Custom Range"}
               </button>
             ))}
           </div>
-          <div className="manager-week-switcher">
-            <button onClick={() => setOffset((current) => current - 1)} type="button">
-              ‹ Prev
-            </button>
-            <strong>{periodLabel}</strong>
-            <button disabled={offset === 0} onClick={() => setOffset((current) => Math.min(0, current + 1))} type="button">
-              Next ›
-            </button>
-          </div>
+          {period !== "custom" && (
+            <div className="manager-week-switcher">
+              <button
+                onClick={() => setOffset((current) => current - 1)}
+                type="button"
+              >
+                ‹ Prev
+              </button>
+              <strong>{periodLabel}</strong>
+              <button
+                disabled={offset === 0}
+                onClick={() => setOffset((current) => Math.min(0, current + 1))}
+                type="button"
+              >
+                Next ›
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="employee-tasks-toolbar">
-        <div className="employee-tasks-count">{filteredTasks.length} tasks in view</div>
+        <div className="employee-tasks-count">
+          {filteredTasks.length} tasks in view
+        </div>
         <div className="employee-tasks-controls">
           <label className="employee-tasks-search">
             <span className="employee-tasks-search__icon">⌕</span>
@@ -366,7 +530,29 @@ export const ManagerTasksPage = () => {
               onChange={(event) => setSearchInput(event.target.value)}
             />
           </label>
-          <select value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)}>
+          {period === "custom" && (
+            <div className="employee-tasks-date-range">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                placeholder="Start Date"
+                title="Start Date"
+              />
+              <span>to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                placeholder="End Date"
+                title="End Date"
+              />
+            </div>
+          )}
+          <select
+            value={selectedProjectId}
+            onChange={(event) => setSelectedProjectId(event.target.value)}
+          >
             <option value="">All Project</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -374,17 +560,27 @@ export const ManagerTasksPage = () => {
               </option>
             ))}
           </select>
-          <select value={selectedActivityId} onChange={(event) => setSelectedActivityId(event.target.value)}>
+          <select
+            value={selectedActivityId}
+            onChange={(event) => setSelectedActivityId(event.target.value)}
+          >
             <option value="">All Activity</option>
             {activities
-              .filter((activity) => !selectedProjectId || activity.projectId === selectedProjectId)
+              .filter(
+                (activity) =>
+                  !selectedProjectId ||
+                  activity.projectId === selectedProjectId,
+              )
               .map((activity) => (
                 <option key={activity.id} value={activity.id}>
                   {activity.name}
                 </option>
               ))}
           </select>
-          <select value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>
+          <select
+            value={selectedStatus}
+            onChange={(event) => setSelectedStatus(event.target.value)}
+          >
             <option value="">All Status</option>
             {Object.values(TaskStatus).map((status) => (
               <option key={status} value={status}>
@@ -392,6 +588,26 @@ export const ManagerTasksPage = () => {
               </option>
             ))}
           </select>
+          <button
+            className="manager-download-button"
+            onClick={handleDownloadCSV}
+            title="Download CSV"
+            type="button"
+          >
+            <svg
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2.5"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -427,12 +643,22 @@ export const ManagerTasksPage = () => {
             </tr>
           </thead>
           <tbody>
-            {pagedTasks.map((task, index) => {
-              const assigneeIds = task.assigneeIds?.length ? task.assigneeIds : [task.assigneeId];
-              const assignees = assigneeIds.map((assigneeId) => employeeMap.get(assigneeId)).filter(Boolean);
+            {filteredTasks.map((task, index) => {
+              const assigneeIds = task.assigneeIds?.length
+                ? task.assigneeIds
+                : [task.assigneeId];
+              const assignees = assigneeIds
+                .map((assigneeId) => employeeMap.get(assigneeId))
+                .filter(Boolean);
               const primaryAssignee = assignees[0];
-              const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, primaryAssignee?.timezone);
-              const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, primaryAssignee?.timezone);
+              const startedAt = toLocalDateAndTimeParts(
+                task.startedAtUtc,
+                primaryAssignee?.timezone,
+              );
+              const completedAt = toLocalDateAndTimeParts(
+                task.completedAtUtc,
+                primaryAssignee?.timezone,
+              );
               const detail = expandedTaskDetails[task.id];
               const isExpanded = expandedTaskId === task.id;
 
@@ -442,10 +668,16 @@ export const ManagerTasksPage = () => {
                     className={`employee-task-table__row ${isExpanded ? "manager-task-row--expanded" : ""}`}
                     onClick={() => void toggleExpandedTask(task.id)}
                   >
-                    <td>{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td>
-                    <td className="employee-task-table__strong">{task.title}</td>
-                    <td>{projectNameMap.get(task.projectId) ?? task.projectId}</td>
-                    <td>{activityNameMap.get(task.activityId) ?? task.activityId}</td>
+                    <td>{String(index + 1).padStart(2, "0")}</td>
+                    <td className="employee-task-table__strong">
+                      {task.title}
+                    </td>
+                    <td>
+                      {projectNameMap.get(task.projectId) ?? task.projectId}
+                    </td>
+                    <td>
+                      {activityNameMap.get(task.activityId) ?? task.activityId}
+                    </td>
                     <td>
                       <div className="timesheet-assignee-cell">
                         {(task.teamNames ?? []).map((name) => (
@@ -461,9 +693,13 @@ export const ManagerTasksPage = () => {
                       </div>
                     </td>
                     <td>
-                      <span className={statusToneMap[task.status]}>{statusLabelMap[task.status]}</span>
+                      <span className={statusToneMap[task.status]}>
+                        {statusLabelMap[task.status]}
+                      </span>
                     </td>
-                    <td>{toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}</td>
+                    <td>
+                      {toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}
+                    </td>
                     <td className="employee-task-table__time-column">
                       <div className="task-date-time-cell">
                         <span>{startedAt.date}</span>
@@ -477,7 +713,11 @@ export const ManagerTasksPage = () => {
                       </div>
                     </td>
                     <td>{task.estimatedHours.toFixed(2)}</td>
-                    <td>{formatDurationCompact(loggedSecondsMap.get(task.id) ?? 0)}</td>
+                    <td>
+                      {formatDurationCompact(
+                        loggedSecondsMap.get(task.id) ?? 0,
+                      )}
+                    </td>
                     <td>
                       <button
                         className="manager-task-detail-button"
@@ -496,7 +736,9 @@ export const ManagerTasksPage = () => {
                       <td colSpan={12}>
                         <div className="manager-task-expand-card">
                           {expandedLoadingTaskId === task.id && !detail ? (
-                            <p className="manager-dashboard-inactive">Loading task details...</p>
+                            <p className="manager-dashboard-inactive">
+                              Loading task details...
+                            </p>
                           ) : detail ? (
                             <>
                               <div className="manager-task-expand-meta">
@@ -530,7 +772,9 @@ export const ManagerTasksPage = () => {
                                 </div>
                                 <div>
                                   <span>Assigned By</span>
-                                  <strong>{detail.createdBy?.fullName ?? "N/A"}</strong>
+                                  <strong>
+                                    {detail.createdBy?.fullName ?? "N/A"}
+                                  </strong>
                                 </div>
                               </div>
                               <div className="manager-task-expand-description">
@@ -548,39 +792,74 @@ export const ManagerTasksPage = () => {
                                 </div>
                                 <div className="manager-task-assignee-grid">
                                   {detail.assignees.map((assignee) => {
-                                    const employeeEntries = detail.entries.filter((entry) => entry.employeeId === assignee.id);
-                                    const totalLoggedSeconds = employeeEntries.reduce(
-                                      (sum, entry) => sum + (entry.durationSeconds ?? entry.durationMinutes * 60),
-                                      0,
-                                    );
-                                    const totalCountCompleted = employeeEntries.reduce(
-                                      (sum, entry) => sum + (entry.countCompleted ?? 0),
-                                      0,
-                                    );
+                                    const employeeEntries =
+                                      detail.entries.filter(
+                                        (entry) =>
+                                          entry.employeeId === assignee.id,
+                                      );
+                                    const totalLoggedSeconds =
+                                      employeeEntries.reduce(
+                                        (sum, entry) =>
+                                          sum +
+                                          (entry.durationSeconds ??
+                                            entry.durationMinutes * 60),
+                                        0,
+                                      );
+                                    const totalCountCompleted =
+                                      employeeEntries.reduce(
+                                        (sum, entry) =>
+                                          sum + (entry.countCompleted ?? 0),
+                                        0,
+                                      );
                                     const firstStartedAt = employeeEntries
                                       .map((entry) => entry.startTimeUtc)
                                       .sort()[0];
                                     const lastEndedAt = employeeEntries
-                                      .map((entry) => entry.endTimeUtc ?? entry.startTimeUtc)
+                                      .map(
+                                        (entry) =>
+                                          entry.endTimeUtc ??
+                                          entry.startTimeUtc,
+                                      )
                                       .sort()
                                       .at(-1);
-                                    const employeeStatus = getAssigneeStatus(detail.task, employeeEntries);
-                                    const firstStarted = toLocalDateAndTimeParts(firstStartedAt, assignee.timezone);
-                                    const lastEnded = toLocalDateAndTimeParts(lastEndedAt, assignee.timezone);
+                                    const employeeStatus = getAssigneeStatus(
+                                      detail.task,
+                                      employeeEntries,
+                                    );
+                                    const firstStarted =
+                                      toLocalDateAndTimeParts(
+                                        firstStartedAt,
+                                        assignee.timezone,
+                                      );
+                                    const lastEnded = toLocalDateAndTimeParts(
+                                      lastEndedAt,
+                                      assignee.timezone,
+                                    );
 
                                     return (
-                                      <article key={assignee.id} className="manager-task-assignee-card">
+                                      <article
+                                        key={assignee.id}
+                                        className="manager-task-assignee-card"
+                                      >
                                         <div className="manager-task-assignee-card__top">
                                           <div>
                                             <strong>{assignee.fullName}</strong>
                                             <span>{assignee.email}</span>
                                           </div>
-                                          <span className={employeeStatus.className}>{employeeStatus.label}</span>
+                                          <span
+                                            className={employeeStatus.className}
+                                          >
+                                            {employeeStatus.label}
+                                          </span>
                                         </div>
                                         <div className="manager-task-assignee-card__metrics">
                                           <div>
                                             <span>Logged</span>
-                                            <strong>{formatDurationCompact(totalLoggedSeconds)}</strong>
+                                            <strong>
+                                              {formatDurationCompact(
+                                                totalLoggedSeconds,
+                                              )}
+                                            </strong>
                                           </div>
                                           <div>
                                             <span>Start Time</span>
@@ -599,12 +878,16 @@ export const ManagerTasksPage = () => {
                                           {detail.task.hasCountTracking ? (
                                             <div>
                                               <span>Count Completed</span>
-                                              <strong>{totalCountCompleted}</strong>
+                                              <strong>
+                                                {totalCountCompleted}
+                                              </strong>
                                             </div>
                                           ) : null}
                                           <div>
                                             <span>Sessions</span>
-                                            <strong>{employeeEntries.length}</strong>
+                                            <strong>
+                                              {employeeEntries.length}
+                                            </strong>
                                           </div>
                                         </div>
                                       </article>
@@ -614,7 +897,9 @@ export const ManagerTasksPage = () => {
                               </div>
                             </>
                           ) : (
-                            <p className="manager-dashboard-inactive">Task details could not be loaded.</p>
+                            <p className="manager-dashboard-inactive">
+                              Task details could not be loaded.
+                            </p>
                           )}
                         </div>
                       </td>
@@ -623,7 +908,7 @@ export const ManagerTasksPage = () => {
                 </Fragment>
               );
             })}
-            {pagedTasks.length === 0 ? (
+            {filteredTasks.length === 0 ? (
               <tr>
                 <td className="employee-task-table__empty" colSpan={12}>
                   No tasks matched the current filters.
@@ -633,35 +918,6 @@ export const ManagerTasksPage = () => {
           </tbody>
         </table>
       </section>
-
-      <div className="employee-tasks-footer">
-        <span>
-          Showing {pagedTasks.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}-
-          {(page - 1) * PAGE_SIZE + pagedTasks.length} of {filteredTasks.length} tasks
-        </span>
-        <div className="employee-tasks-pagination">
-          <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">
-            ‹
-          </button>
-          {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
-            <button
-              key={pageNumber}
-              className={pageNumber === page ? "is-active" : ""}
-              onClick={() => setPage(pageNumber)}
-              type="button"
-            >
-              {pageNumber}
-            </button>
-          ))}
-          <button
-            disabled={page >= totalPages}
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            type="button"
-          >
-            ›
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
