@@ -40,7 +40,9 @@ const taskStatusLabelMap: Record<TaskStatus, string> = {
 };
 
 export const ManagerProjectsPage = () => {
-  const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<"HOUR" | "MIN">("HOUR");
+  const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<"HOUR" | "MIN">(
+    "HOUR",
+  );
   const [benchmarkUnit, setBenchmarkUnit] = useState<"HOUR" | "MIN">("MIN");
   const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -79,22 +81,29 @@ export const ManagerProjectsPage = () => {
     dueDateUtc: new Date(Date.now() + 2 * 86400000).toISOString(),
   });
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
-  const [submittingSection, setSubmittingSection] = useState<"project" | "activity" | "task" | null>(null);
+  const [submittingSection, setSubmittingSection] = useState<
+    "project" | "activity" | "task" | null
+  >(null);
   const knownEmployees = [
     ...new Map(
-      [...employees, ...teams.flatMap((team) => team.members ?? [])].map((employee) => [employee.id, employee]),
+      [...employees, ...teams.flatMap((team) => team.members ?? [])].map(
+        (employee) => [employee.id, employee],
+      ),
     ).values(),
   ];
-  const activeEmployees = knownEmployees.filter((employee) => employee.isActive);
+  const activeEmployees = knownEmployees.filter(
+    (employee) => employee.isActive,
+  );
 
   const load = async () => {
-    const [projectsData, activitiesData, tasksData, employeesData, teamsData] = await Promise.all([
-      api<Project[]>("/projects"),
-      api<Activity[]>("/activities"),
-      api<Task[]>("/tasks"),
-      api<User[]>("/users?scope=team&role=EMPLOYEE"),
-      api<Team[]>("/teams?scope=all"),
-    ]);
+    const [projectsData, activitiesData, tasksData, employeesData, teamsData] =
+      await Promise.all([
+        api<Project[]>("/projects"),
+        api<Activity[]>("/activities"),
+        api<Task[]>("/tasks"),
+        api<User[]>("/users?scope=team&role=EMPLOYEE"),
+        api<Team[]>("/teams?scope=all"),
+      ]);
 
     setProjects(projectsData);
     setActivities(activitiesData);
@@ -127,81 +136,174 @@ export const ManagerProjectsPage = () => {
         onTaskUpdated={load}
         taskId={drawerTaskId}
       />
-      <SectionTitle title="Projects, Activities, Tasks" subtitle="Create project structures, activities, and assign tasks to your team." />
+      <SectionTitle
+        title="Projects, Activities, Tasks"
+        subtitle="Create project structures, activities, and assign tasks to your team."
+      />
 
       <div className="manager-workspace-grid">
-      <Card title="Create Project">
-        <form
-          className="form-grid form-grid--two"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setSubmittingSection("project");
-            try {
-              await api("/projects", { method: "POST", body: JSON.stringify(projectForm), suppressGlobalLoader: true });
-              showSuccessToast("Project created successfully");
-              setProjectForm((current) => ({ ...current, code: "", name: "", description: "" }));
-              await load();
-            } finally {
-              setSubmittingSection(null);
-            }
-          }}
-        >
-          <label className="field">
-            <span className="manager-form-label">Project Code</span>
-            <input className="input" placeholder="CRD-BFSI" value={projectForm.code} onChange={(e) => setProjectForm((current) => ({ ...current, code: e.target.value }))} />
-          </label>
-          <label className="field">
-            <span className="manager-form-label">Project Name</span>
-            <input className="input" placeholder="Credit Rating - BFSI" value={projectForm.name} onChange={(e) => setProjectForm((current) => ({ ...current, name: e.target.value }))} />
-          </label>
-          <label className="field field--full">
-            <span className="manager-form-label">Description</span>
-            <textarea className="input textarea" placeholder="Enter project scope and summary" value={projectForm.description} onChange={(e) => setProjectForm((current) => ({ ...current, description: e.target.value }))} />
-          </label>
-          <div className="manager-form-actions manager-form-actions--full">
-            <LoadingButton className="timesheet-primary-button" loading={submittingSection === "project"} type="submit">Create Project</LoadingButton>
-          </div>
-        </form>
-      </Card>
+        <Card title="Create Project">
+          <form
+            className="form-grid form-grid--two"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSubmittingSection("project");
+              try {
+                await api("/projects", {
+                  method: "POST",
+                  body: JSON.stringify(projectForm),
+                  suppressGlobalLoader: true,
+                });
+                showSuccessToast("Project created successfully");
+                setProjectForm((current) => ({
+                  ...current,
+                  code: "",
+                  name: "",
+                  description: "",
+                }));
+                await load();
+              } finally {
+                setSubmittingSection(null);
+              }
+            }}
+          >
+            <label className="field">
+              <span className="manager-form-label">Project Code</span>
+              <input
+                className="input"
+                placeholder="CRD-BFSI"
+                value={projectForm.code}
+                onChange={(e) =>
+                  setProjectForm((current) => ({
+                    ...current,
+                    code: e.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="manager-form-label">Project Name</span>
+              <input
+                className="input"
+                placeholder="Credit Rating - BFSI"
+                value={projectForm.name}
+                onChange={(e) =>
+                  setProjectForm((current) => ({
+                    ...current,
+                    name: e.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="field field--full">
+              <span className="manager-form-label">Description</span>
+              <textarea
+                className="input textarea"
+                placeholder="Enter project scope and summary"
+                value={projectForm.description}
+                onChange={(e) =>
+                  setProjectForm((current) => ({
+                    ...current,
+                    description: e.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="manager-form-actions manager-form-actions--full">
+              <LoadingButton
+                className="timesheet-primary-button"
+                loading={submittingSection === "project"}
+                type="submit"
+              >
+                Create Project
+              </LoadingButton>
+            </div>
+          </form>
+        </Card>
 
-      <Card title="Create Activity">
-        <form
-          className="form-grid form-grid--two"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setSubmittingSection("activity");
-            try {
-              await api("/activities", { method: "POST", body: JSON.stringify(activityForm), suppressGlobalLoader: true });
-              showSuccessToast("Activity created successfully");
-              setActivityForm((current) => ({ ...current, name: "", description: "" }));
-              await load();
-            } finally {
-              setSubmittingSection(null);
-            }
-          }}
-        >
-          <label className="field">
-            <span className="manager-form-label">Project</span>
-            <select className="input" value={activityForm.projectId} onChange={(e) => setActivityForm((current) => ({ ...current, projectId: e.target.value }))}>
-              <option value="">Select project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="manager-form-label">Activity Name</span>
-            <input className="input" placeholder="Financial Modelling" value={activityForm.name} onChange={(e) => setActivityForm((current) => ({ ...current, name: e.target.value }))} />
-          </label>
-          <label className="field field--full">
-            <span className="manager-form-label">Description</span>
-            <textarea className="input textarea" placeholder="Enter activity description" value={activityForm.description} onChange={(e) => setActivityForm((current) => ({ ...current, description: e.target.value }))} />
-          </label>
-          <div className="manager-form-actions manager-form-actions--full">
-            <LoadingButton className="timesheet-primary-button" loading={submittingSection === "activity"} type="submit">Create Activity</LoadingButton>
-          </div>
-        </form>
-      </Card>
+        <Card title="Create Activity">
+          <form
+            className="form-grid form-grid--two"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSubmittingSection("activity");
+              try {
+                await api("/activities", {
+                  method: "POST",
+                  body: JSON.stringify(activityForm),
+                  suppressGlobalLoader: true,
+                });
+                showSuccessToast("Activity created successfully");
+                setActivityForm((current) => ({
+                  ...current,
+                  name: "",
+                  description: "",
+                }));
+                await load();
+              } finally {
+                setSubmittingSection(null);
+              }
+            }}
+          >
+            <label className="field">
+              <span className="manager-form-label">Project</span>
+              <select
+                className="input"
+                value={activityForm.projectId}
+                onChange={(e) =>
+                  setActivityForm((current) => ({
+                    ...current,
+                    projectId: e.target.value,
+                  }))
+                }
+              >
+                <option value="">Select project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="manager-form-label">Activity Name</span>
+              <input
+                className="input"
+                placeholder="Financial Modelling"
+                value={activityForm.name}
+                onChange={(e) =>
+                  setActivityForm((current) => ({
+                    ...current,
+                    name: e.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="field field--full">
+              <span className="manager-form-label">Description</span>
+              <textarea
+                className="input textarea"
+                placeholder="Enter activity description"
+                value={activityForm.description}
+                onChange={(e) =>
+                  setActivityForm((current) => ({
+                    ...current,
+                    description: e.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="manager-form-actions manager-form-actions--full">
+              <LoadingButton
+                className="timesheet-primary-button"
+                loading={submittingSection === "activity"}
+                type="submit"
+              >
+                Create Activity
+              </LoadingButton>
+            </div>
+          </form>
+        </Card>
       </div>
 
       <Card title="Create Task">
@@ -223,15 +325,23 @@ export const ManagerProjectsPage = () => {
                   taskForm.assignmentType === "TEAM" && taskForm.assignedTeamId
                     ? [taskForm.assignedTeamId]
                     : [],
-                countNumber: taskForm.hasCountTracking ? taskForm.countNumber : null,
-                benchmarkMinutesPerCount: taskForm.hasCountTracking ? taskForm.benchmarkMinutesPerCount : null,
+                countNumber: taskForm.hasCountTracking
+                  ? taskForm.countNumber
+                  : null,
+                benchmarkMinutesPerCount: taskForm.hasCountTracking
+                  ? taskForm.benchmarkMinutesPerCount
+                  : null,
                 estimatedHours: taskForm.hasCountTracking
                   ? calculatedEstimatedMinutes / 60
                   : estimatedHoursUnit === "HOUR"
                     ? taskForm.estimatedHours
                     : taskForm.estimatedHours / 60,
               };
-              await api("/tasks", { method: "POST", body: JSON.stringify(payload), suppressGlobalLoader: true });
+              await api("/tasks", {
+                method: "POST",
+                body: JSON.stringify(payload),
+                suppressGlobalLoader: true,
+              });
               showSuccessToast("Task created successfully");
               setTaskForm((current) => ({
                 ...current,
@@ -254,37 +364,94 @@ export const ManagerProjectsPage = () => {
         >
           <label className="field">
             <span className="manager-form-label">Project</span>
-            <select className="input" value={taskForm.projectId} onChange={(e) => setTaskForm((current) => ({ ...current, projectId: e.target.value }))}>
+            <select
+              className="input"
+              value={taskForm.projectId}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  projectId: e.target.value,
+                }))
+              }
+            >
               <option value="">Select project</option>
               {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
               ))}
             </select>
           </label>
           <label className="field">
-            <span className="manager-form-label">Activity</span>
-            <select className="input" value={taskForm.activityId} onChange={(e) => setTaskForm((current) => ({ ...current, activityId: e.target.value }))}>
-              <option value="">Select activity</option>
+            <span className="manager-form-label">Activity (Optional)</span>
+            <select
+              className="input"
+              value={taskForm.activityId}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  activityId: e.target.value,
+                }))
+              }
+            >
+              <option value="">No specific activity</option>
               {activities
-                .filter((activity) => !taskForm.projectId || activity.projectId === taskForm.projectId)
+                .filter(
+                  (activity) =>
+                    !taskForm.projectId ||
+                    activity.projectId === taskForm.projectId,
+                )
                 .map((activity) => (
-                  <option key={activity.id} value={activity.id}>{activity.name}</option>
+                  <option key={activity.id} value={activity.id}>
+                    {activity.name}
+                  </option>
                 ))}
             </select>
           </label>
           <label className="field">
-            <span className="manager-form-label">Task Title</span>
-            <input className="input" placeholder="Model Audit" value={taskForm.title} onChange={(e) => setTaskForm((current) => ({ ...current, title: e.target.value }))} />
+            <span className="manager-form-label">Task Title (Optional)</span>
+            <input
+              className="input"
+              placeholder="Enter title (defaults to New Task if empty)"
+              value={taskForm.title}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  title: e.target.value,
+                }))
+              }
+            />
           </label>
           <label className="field field--full">
             <span className="manager-form-label">Task Description</span>
-            <textarea className="input textarea" placeholder="Enter task description" value={taskForm.description} onChange={(e) => setTaskForm((current) => ({ ...current, description: e.target.value }))} />
+            <textarea
+              className="input textarea"
+              placeholder="Enter task description"
+              value={taskForm.description}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  description: e.target.value,
+                }))
+              }
+            />
           </label>
           <label className="field">
             <span className="manager-form-label">Priority</span>
-            <select className="input" value={taskForm.priority} onChange={(e) => setTaskForm((current) => ({ ...current, priority: e.target.value as Priority }))}>
+            <select
+              className="input"
+              value={taskForm.priority}
+              onChange={(e) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  priority: e.target.value as Priority,
+                }))
+              }
+            >
               {Object.values(Priority).map((priority) => (
-                <option key={priority} value={priority}>{priority}</option>
+                <option key={priority} value={priority}>
+                  {priority}
+                </option>
               ))}
             </select>
           </label>
@@ -297,13 +464,26 @@ export const ManagerProjectsPage = () => {
                 readOnly={taskForm.hasCountTracking}
                 type="number"
                 value={estimatedHoursDisplayValue}
-                onChange={(e) => setTaskForm((current) => ({ ...current, estimatedHours: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setTaskForm((current) => ({
+                    ...current,
+                    estimatedHours: Number(e.target.value),
+                  }))
+                }
               />
               <div className="employee-tasks-view-toggle manager-unit-toggle">
-                <button className={estimatedHoursUnit === "HOUR" ? "is-active" : ""} onClick={() => setEstimatedHoursUnit("HOUR")} type="button">
+                <button
+                  className={estimatedHoursUnit === "HOUR" ? "is-active" : ""}
+                  onClick={() => setEstimatedHoursUnit("HOUR")}
+                  type="button"
+                >
                   Hour
                 </button>
-                <button className={estimatedHoursUnit === "MIN" ? "is-active" : ""} onClick={() => setEstimatedHoursUnit("MIN")} type="button">
+                <button
+                  className={estimatedHoursUnit === "MIN" ? "is-active" : ""}
+                  onClick={() => setEstimatedHoursUnit("MIN")}
+                  type="button"
+                >
                   Min
                 </button>
               </div>
@@ -338,7 +518,8 @@ export const ManagerProjectsPage = () => {
                   ...current,
                   hasCountTracking: e.target.value === "YES",
                   assigneeIds:
-                    current.assignmentType === "EMPLOYEE" && e.target.value === "YES"
+                    current.assignmentType === "EMPLOYEE" &&
+                    e.target.value === "YES"
                       ? current.assigneeIds
                       : [],
                 }))
@@ -384,10 +565,18 @@ export const ManagerProjectsPage = () => {
                     }
                   />
                   <div className="employee-tasks-view-toggle manager-unit-toggle">
-                    <button className={benchmarkUnit === "HOUR" ? "is-active" : ""} onClick={() => setBenchmarkUnit("HOUR")} type="button">
+                    <button
+                      className={benchmarkUnit === "HOUR" ? "is-active" : ""}
+                      onClick={() => setBenchmarkUnit("HOUR")}
+                      type="button"
+                    >
                       Hour
                     </button>
-                    <button className={benchmarkUnit === "MIN" ? "is-active" : ""} onClick={() => setBenchmarkUnit("MIN")} type="button">
+                    <button
+                      className={benchmarkUnit === "MIN" ? "is-active" : ""}
+                      onClick={() => setBenchmarkUnit("MIN")}
+                      type="button"
+                    >
                       Min
                     </button>
                   </div>
@@ -404,7 +593,9 @@ export const ManagerProjectsPage = () => {
               onChange={(e) =>
                 setTaskForm((current) => ({
                   ...current,
-                  dueDateUtc: new Date(`${e.target.value}T00:00:00.000Z`).toISOString(),
+                  dueDateUtc: new Date(
+                    `${e.target.value}T00:00:00.000Z`,
+                  ).toISOString(),
                 }))
               }
             />
@@ -445,7 +636,9 @@ export const ManagerProjectsPage = () => {
                   <span>
                     {taskForm.assigneeIds.length > 0
                       ? activeEmployees
-                          .filter((employee) => taskForm.assigneeIds.includes(employee.id))
+                          .filter((employee) =>
+                            taskForm.assigneeIds.includes(employee.id),
+                          )
                           .map((employee) => employee.fullName)
                           .join(", ")
                       : "Select employees"}
@@ -455,7 +648,10 @@ export const ManagerProjectsPage = () => {
                 {assigneeDropdownOpen ? (
                   <div className="manager-multiselect__menu">
                     {activeEmployees.map((employee) => (
-                      <label key={employee.id} className="manager-checkbox-item">
+                      <label
+                        key={employee.id}
+                        className="manager-checkbox-item"
+                      >
                         <input
                           checked={taskForm.assigneeIds.includes(employee.id)}
                           onChange={(event) =>
@@ -463,7 +659,9 @@ export const ManagerProjectsPage = () => {
                               ...current,
                               assigneeIds: event.target.checked
                                 ? [...current.assigneeIds, employee.id]
-                                : current.assigneeIds.filter((assigneeId) => assigneeId !== employee.id),
+                                : current.assigneeIds.filter(
+                                    (assigneeId) => assigneeId !== employee.id,
+                                  ),
                             }))
                           }
                           type="checkbox"
@@ -495,7 +693,13 @@ export const ManagerProjectsPage = () => {
             )}
           </label>
           <div className="manager-form-actions manager-form-actions--full">
-            <LoadingButton className="timesheet-primary-button" loading={submittingSection === "task"} type="submit">Create Task</LoadingButton>
+            <LoadingButton
+              className="timesheet-primary-button"
+              loading={submittingSection === "task"}
+              type="submit"
+            >
+              Create Task
+            </LoadingButton>
           </div>
         </form>
       </Card>
@@ -524,23 +728,44 @@ export const ManagerProjectsPage = () => {
                 const assignees = knownEmployees.filter((employee) =>
                   (task.assigneeIds ?? [task.assigneeId]).includes(employee.id),
                 );
-                const taskTeams = teams.filter((team) => (task.assignedTeamIds ?? []).includes(team.id));
+                const taskTeams = teams.filter((team) =>
+                  (task.assignedTeamIds ?? []).includes(team.id),
+                );
                 const primaryAssignee = assignees[0];
-                const startedAt = toLocalDateAndTimeParts(task.startedAtUtc, primaryAssignee?.timezone);
-                const completedAt = toLocalDateAndTimeParts(task.completedAtUtc, primaryAssignee?.timezone);
+                const startedAt = toLocalDateAndTimeParts(
+                  task.startedAtUtc,
+                  primaryAssignee?.timezone,
+                );
+                const completedAt = toLocalDateAndTimeParts(
+                  task.completedAtUtc,
+                  primaryAssignee?.timezone,
+                );
 
                 return (
                   <tr key={task.id} onClick={() => setDrawerTaskId(task.id)}>
-                    <td className="manager-dashboard-table__strong">{task.title}</td>
-                    <td>{projects.find((project) => project.id === task.projectId)?.name ?? task.projectId}</td>
-                    <td>{activities.find((activity) => activity.id === task.activityId)?.name ?? task.activityId}</td>
+                    <td className="manager-dashboard-table__strong">
+                      {task.title}
+                    </td>
+                    <td>
+                      {projects.find((project) => project.id === task.projectId)
+                        ?.name ?? task.projectId}
+                    </td>
+                    <td>
+                      {activities.find(
+                        (activity) => activity.id === task.activityId,
+                      )?.name ?? task.activityId}
+                    </td>
                     <td>
                       {taskTeams.length > 0
                         ? `${taskTeams.map((team) => team.name).join(", ")} (${assignees.length} members)`
-                        : assignees.map((employee) => employee.fullName).join(", ") || task.assigneeId}
+                        : assignees
+                            .map((employee) => employee.fullName)
+                            .join(", ") || task.assigneeId}
                     </td>
                     <td>{taskStatusLabelMap[task.status]}</td>
-                    <td>{toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}</td>
+                    <td>
+                      {toLocalDate(task.dueDateUtc, primaryAssignee?.timezone)}
+                    </td>
                     <td>
                       <div className="task-date-time-cell">
                         <span>{startedAt.date}</span>

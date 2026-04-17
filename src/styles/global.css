@@ -433,8 +433,9 @@ select {
 
 .timesheet-manual-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  align-items: flex-end;
 }
 
 .timesheet-table-card {
@@ -2487,4 +2488,21 @@ select {
 
 .timesheet-user-name:not(:last-child)::after {
   content: ",";
+}
+.timesheet-search-container {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.timesheet-task-search {
+  flex: 0 0 250px;
+  height: 44px;
+}
+
+.timesheet-task-select {
+  flex: 1;
+  height: 44px;
+  min-width: 0;
 }

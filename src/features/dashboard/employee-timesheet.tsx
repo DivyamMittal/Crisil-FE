@@ -112,6 +112,7 @@ export const EmployeeTimesheetPage = () => {
     description: "",
     reason: "",
   });
+  const [taskSearchTerm, setTaskSearchTerm] = useState("");
 
   const load = async (nextPeriod = period, nextOffset = offset) => {
     const [
@@ -313,7 +314,6 @@ export const EmployeeTimesheetPage = () => {
     runningTask?.id !== currentActionTask?.id &&
     currentActionTask?.status !== TaskStatus.APPROVAL_PENDING &&
     currentActionTask?.status !== TaskStatus.COMPLETED;
-
   const startableTasks = useMemo(
     () =>
       tasks.filter(
@@ -332,6 +332,19 @@ export const EmployeeTimesheetPage = () => {
   const getActivityName = (activityId: string) =>
     activities.find((activity) => activity.id === activityId)?.name ??
     activityId;
+
+  const filteredTasks = useMemo(() => {
+    if (!taskSearchTerm.trim()) {
+      return startableTasks;
+    }
+    const term = taskSearchTerm.toLowerCase();
+    return startableTasks.filter(
+      (t) =>
+        t.title?.toLowerCase().includes(term) ||
+        getProjectName(t.projectId).toLowerCase().includes(term) ||
+        getActivityName(t.activityId).toLowerCase().includes(term),
+    );
+  }, [startableTasks, taskSearchTerm, projects, activities]);
 
   const toggleExpandedTask = async (taskId: string) => {
     if (expandedTaskId === taskId) {
@@ -567,19 +580,28 @@ export const EmployeeTimesheetPage = () => {
         </div>
       </div>
       <div className="timesheet-action-row">
-        <select
-          className="timesheet-task-select"
-          value={selectedTaskId}
-          onChange={(event) => setSelectedTaskId(event.target.value)}
-        >
-          <option value="">Select Task</option>
-          {startableTasks.map((task) => (
-            <option key={task.id} value={task.id}>
-              {getProjectName(task.projectId)} |{" "}
-              {getActivityName(task.activityId)} | {task.title}
-            </option>
-          ))}
-        </select>
+        <div className="timesheet-search-container">
+          <input
+            className="input timesheet-task-search"
+            placeholder="Search tasks..."
+            type="text"
+            value={taskSearchTerm}
+            onChange={(e) => setTaskSearchTerm(e.target.value)}
+          />
+          <select
+            className="timesheet-task-select"
+            value={selectedTaskId}
+            onChange={(event) => setSelectedTaskId(event.target.value)}
+          >
+            <option value="">Select Task</option>
+            {filteredTasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {getProjectName(task.projectId)} |{" "}
+                {getActivityName(task.activityId)} | {task.title}
+              </option>
+            ))}
+          </select>
+        </div>
         {canStartTask ? (
           <LoadingButton
             className="timesheet-primary-button"
